@@ -2,6 +2,8 @@
 
 React, TypeScript and Vite PWA connected to the supplied Express backend. Start the backend on port 5000, then run `pnpm install` and `pnpm dev`. The frontend runs on port 3000; set `VITE_API_PROXY_TARGET` if the backend uses another address.
 
+Tailwind CSS is configured through the official Vite plugin and `src/tailwind.css`. Preflight is omitted to preserve the current styling. New utilities use the `tw:` prefix, such as `tw:flex` and `tw:bg-primary`, and follow the existing palette and `data-theme` dark mode. Only frontend source is scanned.
+
 ## Backend contract used
 
 - `POST /api/v1/auth/login` returns `{ token, data: { user } }`. The bearer JWT is held in tab memory and is cleared on reload or sign-out. Public signup is controlled by `PUBLIC_SIGNUP_ENABLED` and is omitted from this UI.

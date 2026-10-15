@@ -1,1 +1,1 @@
-{"root":["./src/customerreturns.tsx","./src/masterforms.tsx","./src/purchasecreate.tsx","./src/returninspection.tsx","./src/supplierreturns.tsx","./src/api.ts","./src/main.tsx"],"version":"5.8.3"}
+{"root":["./src/customerreturns.tsx","./src/invitations.tsx","./src/masterforms.tsx","./src/purchasecreate.tsx","./src/returninspection.tsx","./src/supplierreturns.tsx","./src/api.ts","./src/main.tsx","./src/components/appselect.tsx","./src/components/ui/select.tsx"],"version":"5.8.3"}

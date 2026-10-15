@@ -1,3 +1,4 @@
+import { AppSelect } from "./components/AppSelect";
 import React, { useEffect, useState } from "react";
 import { ApiError, command, newKey, request, type ApiList } from "./api";
 type Item = { id: string | number; name: string; sku?: string };
@@ -100,28 +101,29 @@ export function PurchaseCreate({
           </p>
           <label>
             Supplier
-            <select
+            <AppSelect
               value={supplierId}
-              onChange={(e) => setSupplier(e.target.value)}
-            >
-              <option value="">Unassigned supplier</option>
-              {contacts.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
+              onValueChange={(value) => setSupplier(value)}
+              options={[
+                { value: "", label: <>Unassigned supplier</> },
+                ...contacts.map((c) => ({
+                  value: String(c.id),
+                  label: <>{c.name}</>,
+                })),
+              ]}
+            />
           </label>
           <div className="form-grid">
             <label>
               Status
-              <select
+              <AppSelect
                 value={status}
-                onChange={(e) => setStatus(e.target.value)}
-              >
-                <option>DRAFT</option>
-                <option>PENDING</option>
-              </select>
+                onValueChange={(value) => setStatus(value)}
+                options={[
+                  { value: "DRAFT", label: <>DRAFT</> },
+                  { value: "PENDING", label: <>PENDING</> },
+                ]}
+              />
             </label>
             <label>
               Amount paid (₦)
@@ -136,37 +138,41 @@ export function PurchaseCreate({
           </div>
           <label>
             Product
-            <select
+            <AppSelect
               required
               value={productId}
-              onChange={(e) => {
-                setProduct(e.target.value);
+              onValueChange={(value) => {
+                setProduct(value);
                 setUnit("");
               }}
-            >
-              <option value="">Choose product</option>
-              {products.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
+              placeholder="Choose product"
+              options={[
+                ...products.map((p) => ({
+                  value: String(p.id),
+                  label: <>{p.name}</>,
+                })),
+              ]}
+            />
           </label>
           <div className="form-grid">
             <label>
               Unit
-              <select
+              <AppSelect
                 required
                 value={unitId}
-                onChange={(e) => setUnit(e.target.value)}
-              >
-                <option value="">Choose unit</option>
-                {units.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name} · {u.sku}
-                  </option>
-                ))}
-              </select>
+                onValueChange={(value) => setUnit(value)}
+                placeholder="Choose unit"
+                options={[
+                  ...units.map((u) => ({
+                    value: String(u.id),
+                    label: (
+                      <>
+                        {u.name} · {u.sku}
+                      </>
+                    ),
+                  })),
+                ]}
+              />
             </label>
             <label>
               Quantity

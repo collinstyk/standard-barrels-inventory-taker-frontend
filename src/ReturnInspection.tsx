@@ -1,3 +1,4 @@
+import { AppSelect } from "./components/AppSelect";
 import React, { useEffect, useState } from "react";
 import { ApiError, command, newKey, request } from "./api";
 type ReturnItem = {
@@ -118,55 +119,63 @@ export function ReturnInspection({
           </p>
           <label>
             Return item
-            <select
+            <AppSelect
               required
               value={itemId}
               disabled={!!pending}
-              onChange={(e) => {
-                setItem(e.target.value);
+              onValueChange={(value) => {
+                setItem(value);
                 setBatch("");
               }}
-            >
-              <option value="">Choose item</option>
-              {items.map((i) => (
-                <option key={i.id} value={i.id}>
-                  Item #{i.id} · {i.quantityInOrderUnit} requested
-                </option>
-              ))}
-            </select>
+              placeholder="Choose item"
+              options={[
+                ...items.map((i) => ({
+                  value: String(i.id),
+                  label: (
+                    <>
+                      Item #{i.id} · {i.quantityInOrderUnit} requested
+                    </>
+                  ),
+                })),
+              ]}
+            />
           </label>
           <label>
             Quarantine batch
-            <select
+            <AppSelect
               required
               value={batchId}
               disabled={!!pending}
-              onChange={(e) => setBatch(e.target.value)}
-            >
-              <option value="">Choose batch</option>
-              {batches.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.id.slice(0, 12)} · {b.quantityOnHandBase} base units
-                </option>
-              ))}
-            </select>
+              onValueChange={(value) => setBatch(value)}
+              placeholder="Choose batch"
+              options={[
+                ...batches.map((b) => ({
+                  value: String(b.id),
+                  label: (
+                    <>
+                      {b.id.slice(0, 12)} · {b.quantityOnHandBase} base units
+                    </>
+                  ),
+                })),
+              ]}
+            />
           </label>
           <div className="form-grid">
             <label>
               Final warehouse
-              <select
+              <AppSelect
                 required
                 value={warehouseId}
                 disabled={!!pending}
-                onChange={(e) => setWarehouse(e.target.value)}
-              >
-                <option value="">Choose warehouse</option>
-                {warehouses.map((w) => (
-                  <option key={w.id} value={w.id}>
-                    {w.name}
-                  </option>
-                ))}
-              </select>
+                onValueChange={(value) => setWarehouse(value)}
+                placeholder="Choose warehouse"
+                options={[
+                  ...warehouses.map((w) => ({
+                    value: String(w.id),
+                    label: <>{w.name}</>,
+                  })),
+                ]}
+              />
             </label>
             <label>
               Quantity in order unit
@@ -183,31 +192,33 @@ export function ReturnInspection({
           </div>
           <label>
             Outcome
-            <select
+            <AppSelect
               value={outcome}
               disabled={!!pending}
-              onChange={(e) => setOutcome(e.target.value)}
-            >
-              <option>SELLABLE</option>
-              <option>DAMAGED</option>
-              <option>REJECTED</option>
-            </select>
+              onValueChange={(value) => setOutcome(value)}
+              options={[
+                { value: "SELLABLE", label: <>SELLABLE</> },
+                { value: "DAMAGED", label: <>DAMAGED</> },
+                { value: "REJECTED", label: <>REJECTED</> },
+              ]}
+            />
           </label>
           <div className="form-grid">
             {checkNames.map((k) => (
               <label key={k}>
                 {k.replace(/([A-Z])/g, " $1")}
-                <select
+                <AppSelect
                   value={checks[k]}
                   disabled={!!pending}
-                  onChange={(e) =>
-                    setChecks({ ...checks, [k]: e.target.value as Check })
+                  onValueChange={(value) =>
+                    setChecks({ ...checks, [k]: value as Check })
                   }
-                >
-                  <option>PASSED</option>
-                  <option>FAILED</option>
-                  <option>NOT_APPLICABLE</option>
-                </select>
+                  options={[
+                    { value: "PASSED", label: <>PASSED</> },
+                    { value: "FAILED", label: <>FAILED</> },
+                    { value: "NOT_APPLICABLE", label: <>NOT_APPLICABLE</> },
+                  ]}
+                />
               </label>
             ))}
           </div>

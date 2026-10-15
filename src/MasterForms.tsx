@@ -1,3 +1,4 @@
+import { AppSelect } from "./components/AppSelect";
 import React, { useEffect, useState } from "react";
 import { money, request, type ApiList } from "./api";
 type Entry = { id: string | number; name: string };
@@ -99,18 +100,18 @@ export function ProductCreate({
           </label>
           <label>
             Category
-            <select
+            <AppSelect
               required
               value={categoryId}
-              onChange={(e) => setCategory(e.target.value)}
-            >
-              <option value="">Choose category</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
+              onValueChange={(value) => setCategory(value)}
+              placeholder="Choose category"
+              options={[
+                ...categories.map((c) => ({
+                  value: String(c.id),
+                  label: <>{c.name}</>,
+                })),
+              ]}
+            />
           </label>
         </div>
         <label>
