@@ -1,3 +1,4 @@
+import { AppSelect } from "./components/AppSelect";
 import React, { useEffect, useState } from "react";
 import { ApiError, command, date, newKey, request, type Role } from "./api";
 import { ReturnInspection } from "./ReturnInspection";
@@ -278,21 +279,25 @@ function ReturnCreate({
           </label>
           <label>
             Dispatched sale item
-            <select
+            <AppSelect
               required
               value={itemId}
-              onChange={(e) => setItem(e.target.value)}
-            >
-              <option value="">Choose item</option>
-              {items
-                .filter((i) => i.quantityDelivered > 0)
-                .map((i) => (
-                  <option key={i.id} value={i.id}>
-                    {i.product.name} · {i.unit.name} · {i.quantityDelivered}{" "}
-                    delivered
-                  </option>
-                ))}
-            </select>
+              onValueChange={(value) => setItem(value)}
+              placeholder="Choose item"
+              options={[
+                ...items
+                  .filter((i) => i.quantityDelivered > 0)
+                  .map((i) => ({
+                    value: String(i.id),
+                    label: (
+                      <>
+                        {i.product.name} · {i.unit.name} · {i.quantityDelivered}{" "}
+                        delivered
+                      </>
+                    ),
+                  })),
+              ]}
+            />
           </label>
           <label>
             Quantity in sale unit
@@ -396,33 +401,37 @@ function ReceiveReturn({
           </p>
           <label>
             Return item
-            <select
+            <AppSelect
               required
               value={itemId}
-              onChange={(e) => setItem(e.target.value)}
-            >
-              <option value="">Choose item</option>
-              {value.items.map((i) => (
-                <option key={i.id} value={i.id}>
-                  Item #{i.id} · {i.quantityInOrderUnit}
-                </option>
-              ))}
-            </select>
+              onValueChange={(value) => setItem(value)}
+              placeholder="Choose item"
+              options={[
+                ...value.items.map((i) => ({
+                  value: String(i.id),
+                  label: (
+                    <>
+                      Item #{i.id} · {i.quantityInOrderUnit}
+                    </>
+                  ),
+                })),
+              ]}
+            />
           </label>
           <label>
             Receiving warehouse
-            <select
+            <AppSelect
               required
               value={warehouseId}
-              onChange={(e) => setWarehouse(e.target.value)}
-            >
-              <option value="">Choose warehouse</option>
-              {warehouses.map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.name}
-                </option>
-              ))}
-            </select>
+              onValueChange={(value) => setWarehouse(value)}
+              placeholder="Choose warehouse"
+              options={[
+                ...warehouses.map((w) => ({
+                  value: String(w.id),
+                  label: <>{w.name}</>,
+                })),
+              ]}
+            />
           </label>
           {error && <div className="alert error">{error}</div>}
           <div className="modal-actions">

@@ -1,3 +1,5 @@
+import { AppSelect } from "./components/AppSelect";
+import "./tailwind.css";
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
@@ -144,19 +146,23 @@ function App() {
         </div>
         <div className="nav-label">WORKSPACE</div>
         <nav>
-          {nav.filter(([name]) => name !== "Staff invitations" || user.role === "ADMIN").map(([name, icon]) => (
-            <button
-              key={name}
-              className={page === name ? "active" : ""}
-              onClick={() => {
-                setPage(name);
-                setMobile(false);
-              }}
-            >
-              {icon}
-              <span>{name}</span>
-            </button>
-          ))}
+          {nav
+            .filter(
+              ([name]) => name !== "Staff invitations" || user.role === "ADMIN",
+            )
+            .map(([name, icon]) => (
+              <button
+                key={name}
+                className={page === name ? "active" : ""}
+                onClick={() => {
+                  setPage(name);
+                  setMobile(false);
+                }}
+              >
+                {icon}
+                <span>{name}</span>
+              </button>
+            ))}
         </nav>
         <div className="sidebar-foot">
           <div className="avatar">{user.name.slice(0, 1).toUpperCase()}</div>
@@ -220,8 +226,11 @@ function App() {
   );
 }
 function Login({ onLogin }: { onLogin: (u: User) => void }) {
-  const inviteToken = new URLSearchParams(window.location.hash.slice(1)).get("invite");
-  if (inviteToken) return <AcceptInvite token={inviteToken} onAccepted={onLogin} />;
+  const inviteToken = new URLSearchParams(window.location.hash.slice(1)).get(
+    "invite",
+  );
+  if (inviteToken)
+    return <AcceptInvite token={inviteToken} onAccepted={onLogin} />;
   const [email, setEmail] = useState(""),
     [password, setPassword] = useState(""),
     [error, setError] = useState(""),
@@ -388,19 +397,20 @@ function Sales({ user }: { user: User }) {
               }}
             />
           </label>
-          <select
+          <AppSelect
             aria-label="Filter delivery status"
             value={filter}
-            onChange={(e) => {
-              setFilter(e.target.value);
+            onValueChange={(value) => {
+              setFilter(value);
               setPage(1);
             }}
-          >
-            <option value="">All delivery states</option>
-            <option>NOT_DELIVERED</option>
-            <option>PARTLY_DELIVERED</option>
-            <option>FULLY_DELIVERED</option>
-          </select>
+            options={[
+              { value: "", label: <>All delivery states</> },
+              { value: "NOT_DELIVERED", label: <>NOT_DELIVERED</> },
+              { value: "PARTLY_DELIVERED", label: <>PARTLY_DELIVERED</> },
+              { value: "FULLY_DELIVERED", label: <>FULLY_DELIVERED</> },
+            ]}
+          />
         </div>
         {loading ? (
           <div className="state">Loading sales…</div>
@@ -852,15 +862,16 @@ function CommercialModal({
         </p>
         <label>
           Status
-          <select
+          <AppSelect
             value={transactionStatus}
-            onChange={(e) => setStatus(e.target.value)}
-          >
-            <option>DRAFT</option>
-            <option>PENDING</option>
-            <option>COMPLETED</option>
-            <option>CANCELLED</option>
-          </select>
+            onValueChange={(value) => setStatus(value)}
+            options={[
+              { value: "DRAFT", label: <>DRAFT</> },
+              { value: "PENDING", label: <>PENDING</> },
+              { value: "COMPLETED", label: <>COMPLETED</> },
+              { value: "CANCELLED", label: <>CANCELLED</> },
+            ]}
+          />
         </label>
         <label>
           Amount paid (₦)
@@ -986,60 +997,65 @@ function SaleCreate({
         <div className="form-grid">
           <label>
             Buyer
-            <select
+            <AppSelect
               value={buyerId}
-              onChange={(e) => setBuyerId(e.target.value)}
-            >
-              <option value="">Walk-in customer</option>
-              {contacts.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
+              onValueChange={(value) => setBuyerId(value)}
+              options={[
+                { value: "", label: <>Walk-in customer</> },
+                ...contacts.map((c) => ({
+                  value: String(c.id),
+                  label: <>{c.name}</>,
+                })),
+              ]}
+            />
           </label>
           <label>
             Status
-            <select
+            <AppSelect
               value={transactionStatus}
-              onChange={(e) => setStatus(e.target.value)}
-            >
-              <option>DRAFT</option>
-              <option>PENDING</option>
-            </select>
+              onValueChange={(value) => setStatus(value)}
+              options={[
+                { value: "DRAFT", label: <>DRAFT</> },
+                { value: "PENDING", label: <>PENDING</> },
+              ]}
+            />
           </label>
           <label>
             Product
-            <select
+            <AppSelect
               required
               value={productId}
-              onChange={(e) => {
-                setProductId(e.target.value);
+              onValueChange={(value) => {
+                setProductId(value);
                 setUnitId("");
               }}
-            >
-              <option value="">Choose product</option>
-              {products.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
+              placeholder="Choose product"
+              options={[
+                ...products.map((p) => ({
+                  value: String(p.id),
+                  label: <>{p.name}</>,
+                })),
+              ]}
+            />
           </label>
           <label>
             Product unit
-            <select
+            <AppSelect
               required
               value={unitId}
-              onChange={(e) => setUnitId(e.target.value)}
-            >
-              <option value="">Choose unit</option>
-              {units.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name} · {u.sku}
-                </option>
-              ))}
-            </select>
+              onValueChange={(value) => setUnitId(value)}
+              placeholder="Choose unit"
+              options={[
+                ...units.map((u) => ({
+                  value: String(u.id),
+                  label: (
+                    <>
+                      {u.name} · {u.sku}
+                    </>
+                  ),
+                })),
+              ]}
+            />
           </label>
           <label>
             Quantity ordered
@@ -1075,18 +1091,18 @@ function SaleCreate({
           {transactionStatus !== "DRAFT" && (
             <label>
               Fulfillment warehouse
-              <select
+              <AppSelect
                 required
                 value={warehouseId}
-                onChange={(e) => setWarehouseId(e.target.value)}
-              >
-                <option value="">Choose warehouse</option>
-                {warehouses.map((w) => (
-                  <option key={w.id} value={w.id}>
-                    {w.name}
-                  </option>
-                ))}
-              </select>
+                onValueChange={(value) => setWarehouseId(value)}
+                placeholder="Choose warehouse"
+                options={[
+                  ...warehouses.map((w) => ({
+                    value: String(w.id),
+                    label: <>{w.name}</>,
+                  })),
+                ]}
+              />
             </label>
           )}
         </div>
@@ -1484,15 +1500,16 @@ function PurchaseCommercial({
         </p>
         <label>
           Status
-          <select
+          <AppSelect
             value={transactionStatus}
-            onChange={(e) => setStatus(e.target.value)}
-          >
-            <option>DRAFT</option>
-            <option>PENDING</option>
-            <option>COMPLETED</option>
-            <option>CANCELLED</option>
-          </select>
+            onValueChange={(value) => setStatus(value)}
+            options={[
+              { value: "DRAFT", label: <>DRAFT</> },
+              { value: "PENDING", label: <>PENDING</> },
+              { value: "COMPLETED", label: <>COMPLETED</> },
+              { value: "CANCELLED", label: <>CANCELLED</> },
+            ]}
+          />
         </label>
         <label>
           Amount paid (₦)
@@ -1585,33 +1602,37 @@ function ReceiptModal({
         </p>
         <label>
           Purchase item
-          <select
+          <AppSelect
             required
             value={itemId}
-            onChange={(e) => setItemId(e.target.value)}
-          >
-            <option value="">Choose item</option>
-            {purchase.items?.map((i) => (
-              <option key={i.id} value={i.id}>
-                {i.product.name} · {i.unit.name}
-              </option>
-            ))}
-          </select>
+            onValueChange={(value) => setItemId(value)}
+            placeholder="Choose item"
+            options={[
+              ...(purchase.items ?? []).map((i) => ({
+                value: String(i.id),
+                label: (
+                  <>
+                    {i.product.name} · {i.unit.name}
+                  </>
+                ),
+              })),
+            ]}
+          />
         </label>
         <label>
           Warehouse
-          <select
+          <AppSelect
             required
             value={warehouseId}
-            onChange={(e) => setWarehouseId(e.target.value)}
-          >
-            <option value="">Choose warehouse</option>
-            {warehouses.map((w) => (
-              <option key={w.id} value={w.id}>
-                {w.name}
-              </option>
-            ))}
-          </select>
+            onValueChange={(value) => setWarehouseId(value)}
+            placeholder="Choose warehouse"
+            options={[
+              ...warehouses.map((w) => ({
+                value: String(w.id),
+                label: <>{w.name}</>,
+              })),
+            ]}
+          />
         </label>
         <div className="form-grid">
           <label>
@@ -1751,35 +1772,37 @@ function Inventory({ user }: { user: User }) {
               </div>
             </div>
             <div className="filters">
-              <select
+              <AppSelect
                 value={productId}
-                onChange={(e) => {
-                  setProductId(e.target.value);
+                onValueChange={(value) => {
+                  setProductId(value);
                   setUnitId("");
                   setAvailability(null);
                 }}
-              >
-                <option value="">Choose product</option>
-                {products.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-              <select
+                aria-label="Product"
+                options={[
+                  { value: "", label: <>Choose product</> },
+                  ...products.map((p) => ({
+                    value: String(p.id),
+                    label: <>{p.name}</>,
+                  })),
+                ]}
+              />
+              <AppSelect
                 value={unitId}
-                onChange={(e) => {
-                  setUnitId(e.target.value);
+                onValueChange={(value) => {
+                  setUnitId(value);
                   setAvailability(null);
                 }}
-              >
-                <option value="">Choose unit</option>
-                {units.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name}
-                  </option>
-                ))}
-              </select>
+                aria-label="Product unit"
+                options={[
+                  { value: "", label: <>Choose unit</> },
+                  ...units.map((u) => ({
+                    value: String(u.id),
+                    label: <>{u.name}</>,
+                  })),
+                ]}
+              />
               <button
                 className="primary"
                 disabled={!productId || !unitId}
@@ -1964,16 +1987,17 @@ function AdjustmentModal({
         </label>
         <label>
           Reason
-          <select
+          <AppSelect
             value={reason}
-            onChange={(e) => setReason(e.target.value)}
+            onValueChange={(value) => setReason(value)}
             disabled={!!pending}
-          >
-            <option>PHYSICAL_COUNT</option>
-            <option>LOSS</option>
-            <option>FOUND_STOCK</option>
-            <option>DATA_CORRECTION</option>
-          </select>
+            options={[
+              { value: "PHYSICAL_COUNT", label: <>PHYSICAL_COUNT</> },
+              { value: "LOSS", label: <>LOSS</> },
+              { value: "FOUND_STOCK", label: <>FOUND_STOCK</> },
+              { value: "DATA_CORRECTION", label: <>DATA_CORRECTION</> },
+            ]}
+          />
         </label>
         <label>
           Notes

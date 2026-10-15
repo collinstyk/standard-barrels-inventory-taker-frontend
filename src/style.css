@@ -515,7 +515,7 @@ form select {
   min-width: 0;
 }
 
-.filters select {
+.filters .app-select {
   max-width: 220px;
 }
 
@@ -1080,7 +1080,7 @@ td small {
     flex: auto;
   }
 
-  .filters select {
+  .filters .app-select {
     max-width: none;
     flex: 1;
   }
