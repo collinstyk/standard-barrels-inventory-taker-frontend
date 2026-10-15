@@ -41,6 +41,7 @@ import { PurchaseCreate } from "./PurchaseCreate";
 import { CustomerReturns } from "./CustomerReturns";
 import { ProductCreate, UnitCreate, EditRecord } from "./MasterForms";
 import { SupplierReturns } from "./SupplierReturns";
+import { InviteStaff, AcceptInvite } from "./Invitations";
 type Page =
   | "Sales"
   | "Purchases"
@@ -50,7 +51,8 @@ type Page =
   | "Products"
   | "Warehouses"
   | "Supplier returns"
-  | "Customer returns";
+  | "Customer returns"
+  | "Staff invitations";
 type Entity = {
   id: string | number;
   name?: string;
@@ -67,6 +69,7 @@ const nav: [Page, React.ReactNode][] = [
   ["Warehouses", <Warehouse />],
   ["Supplier returns", <RotateCcw />],
   ["Customer returns", <RotateCcw />],
+  ["Staff invitations", <Users />],
 ];
 function status(value: string | undefined) {
   return (
@@ -141,7 +144,7 @@ function App() {
         </div>
         <div className="nav-label">WORKSPACE</div>
         <nav>
-          {nav.map(([name, icon]) => (
+          {nav.filter(([name]) => name !== "Staff invitations" || user.role === "ADMIN").map(([name, icon]) => (
             <button
               key={name}
               className={page === name ? "active" : ""}
@@ -200,7 +203,9 @@ function App() {
           </div>
         </header>
         <main>
-          {page === "Sales" ? (
+          {page === "Staff invitations" ? (
+            <InviteStaff />
+          ) : page === "Sales" ? (
             <Sales user={user} />
           ) : page === "Purchases" ? (
             <Purchases user={user} />
@@ -215,6 +220,8 @@ function App() {
   );
 }
 function Login({ onLogin }: { onLogin: (u: User) => void }) {
+  const inviteToken = new URLSearchParams(window.location.hash.slice(1)).get("invite");
+  if (inviteToken) return <AcceptInvite token={inviteToken} onAccepted={onLogin} />;
   const [email, setEmail] = useState(""),
     [password, setPassword] = useState(""),
     [error, setError] = useState(""),
