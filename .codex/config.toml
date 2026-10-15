@@ -1,0 +1,7 @@
+default_permissions = "frontend-with-backend-reference"
+
+[permissions.frontend-with-backend-reference]
+extends = ":workspace"
+
+[permissions.frontend-with-backend-reference.filesystem]
+'C:\Users\CHIDOZIE\Desktop\standard-barrels-inventory-taker-backend' = "read"
