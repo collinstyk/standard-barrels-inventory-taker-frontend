@@ -1,4 +1,4 @@
-const CACHE = "sb-shell-v2";
+const CACHE = "sb-shell-v3";
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches
@@ -29,9 +29,11 @@ self.addEventListener("activate", (event) => {
 });
 self.addEventListener("fetch", (event) => {
   const request = event.request;
+  const url = new URL(request.url);
   if (
     request.method !== "GET" ||
-    new URL(request.url).pathname.startsWith("/api/") ||
+    url.origin !== self.location.origin ||
+    url.pathname.startsWith("/api/") ||
     request.headers.has("Authorization")
   )
     return;
@@ -39,7 +41,16 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(fetch(request).catch(() => caches.match("/")));
     return;
   }
-  if (new URL(request.url).origin === self.location.origin)
+  // Cache versioned production assets and shell icons, never Vite source modules.
+  if (
+    url.pathname.startsWith("/assets/") ||
+    [
+      "/icon.svg",
+      "/icon-192.png",
+      "/icon-512.png",
+      "/manifest.webmanifest",
+    ].includes(url.pathname)
+  )
     event.respondWith(
       caches.match(request).then(
         (hit) =>

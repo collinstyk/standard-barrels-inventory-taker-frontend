@@ -39,8 +39,8 @@ export function InviteStaff() {
         Create a single-use invitation for a specific email. It expires after 48
         hours. Share the link privately with that person.
       </p>
-      <form onSubmit={submit}>
-        <label>
+      <form onSubmit={submit} className="space-y-2">
+        <label className="flex flex-col gap-2">
           Email address
           <input
             required
@@ -49,8 +49,8 @@ export function InviteStaff() {
             onChange={(e) => setEmail(e.target.value)}
           />
         </label>
-        
-        <label>
+
+        <label className="flex flex-col gap-2">
           Role
           <AppSelect
             value={role}
@@ -117,7 +117,7 @@ export function AcceptInvite({
           body: JSON.stringify({ token, name, password }),
         },
       );
-      session.set(result.token);
+      session.set(result.token, result.data.user);
       window.history.replaceState(null, "", "/");
       onAccepted(result.data.user);
     } catch (error) {

@@ -2,11 +2,11 @@
 
 React, TypeScript and Vite PWA connected to the supplied Express backend. Start the backend on port 5000, then run `pnpm install` and `pnpm dev`. The frontend runs on port 3000; set `VITE_API_PROXY_TARGET` if the backend uses another address.
 
-Tailwind CSS is configured through the official Vite plugin and `src/tailwind.css`. Preflight is omitted to preserve the current styling. New utilities use the `tw:` prefix, such as `tw:flex` and `tw:bg-primary`, and follow the existing palette and `data-theme` dark mode. Only frontend source is scanned.
+Tailwind CSS is configured through the official Vite plugin and `src/tailwind.css`. Use standard classes such as `flex`, `p-6`, `bg-primary`, and `dark:bg-canvas`. Existing styles live in the components layer, so explicit utilities take precedence. Preflight is omitted to preserve the design; the palette and `data-theme` dark mode are retained. Frontend source and `index.html` are scanned. The service worker runs in production only and never caches Vite source modules.
 
 ## Backend contract used
 
-- `POST /api/v1/auth/login` returns `{ token, data: { user } }`. The bearer JWT is held in tab memory and is cleared on reload or sign-out. Public signup is controlled by `PUBLIC_SIGNUP_ENABLED` and is omitted from this UI.
+- `POST /api/v1/auth/login` returns `{ token, data: { user } }`. Login is saved in tab-scoped `sessionStorage` so it survives reload. Expired/corrupt data, explicit logout, and authenticated `401` responses clear it. On reload, a protected Sales read verifies the saved token before the workspace opens; network failures retain login and offer retry. There is no backend `/auth/me` route, so the stored user profile is only a UI hint and the backend remains authoritative for roles. Credentials are never saved in localStorage or the service worker. Public signup is controlled by `PUBLIC_SIGNUP_ENABLED` and is omitted from this UI.
 - An ADMIN can create a STAFF, MANAGER, or AUDITOR invitation on the Staff invitations screen. Copy the link when shown and share it privately. The recipient uses the link to set a name and password, then signs in. Run the backend invitation migration before using this screen. Sharing a link directly does not establish ownership of the email address.
 - `GET /api/v1/sale` and `GET /api/v1/sale/:id` supply sale list/detail. Sale detail includes fulfillment IDs, dispatch history, ProductUnit quantities and payment/delivery states. `POST /api/v1/sale/create` creates a commercial order; `PATCH /api/v1/sale/:id` updates commercial fields; `POST /api/v1/sale/:id/dispatches` posts actual stock issues. Dispatch requires `INVENTORY_V2_ENABLED=true`.
 - `GET /api/v1/purchase` and `GET /api/v1/purchase/:id` supply purchase list/detail and embedded receipt history. `POST /api/v1/purchase/create` creates a commercial order. `POST /api/v1/purchase/:id/receipts` creates a draft; `POST /api/v1/purchase/:id/receipts/:receiptId/post` posts stock. Receipt actions require Inventory V2.
@@ -18,7 +18,22 @@ Tailwind CSS is configured through the official Vite plugin and `src/tailwind.cs
 
 ## Verification and limits
 
+### Sale checkout
+
+Select product, unit, warehouse and quantity before adding a basket line. Availability is requested after a short typing debounce and shown for the selected warehouse, including the server's ProductUnit and base-unit quantities. Insufficient stock is a warning rather than an order restriction, since goods can be owed for later delivery. Basket quantity/warehouse edits update the preview; dispatch remains the authoritative stock check. Failed or disabled availability displays the server message and a retry action rather than claiming stock is available.
+
+TanStack Query manages sale option, ProductUnit and availability reads. Query data is held in memory, scoped to the signed-in user and cleared on session changes. Availability is refreshed on focus/reconnect and after checkout. Commands retain the explicit idempotency/recovery flow; global mutation defaults disable automatic retries and offline pausing. Other existing screens still use the shared request client. Query tests cover caching, invalidation, session clearing and no automatic offline command replay. The pre-add warning, basket edits, failure/retry presentation and mobile dark layout were checked with isolated browser fixtures.
+
+New sale opens a multi-product basket. Each product/unit line has a warehouse, ordered quantity, handover-now quantity and price. The payment modal records money already received; review allows returning to the basket without saving an order. Removing or reducing products revalidates the paid amount. Financial estimates use four-place fixed-point integers; confirmed totals and statuses come from the server.
+
+Final confirmation creates the commercial order with zero delivered quantities and the full warehouse plan, then submits only the requested handover quantities to the dispatch endpoint using returned fulfillment IDs. A failed handover leaves the saved order available for recovery. Zero handover creates an order without dispatch. Completion is shown only from the returned sale status. This flow requires Inventory V2; it does not fall back to legacy stock deductions.
+
+Each command has its own idempotency key. The exact request and progress are preserved in user-scoped tab session storage before sending. Reloading an interrupted confirmation restores an explicit retry screen; it never automatically resends a stock command. Storage availability is required for confirmation recovery. Production screens contain no preview data.
+
+Checkout verification: multi-product creation, partial handover, full handover, editing quantities after payment, auditor action visibility, reload recovery after a lost dispatch response, desktop input alignment, and mobile dark mode were checked with isolated browser fixtures. The fixtures were removed afterward. Automated checkout tests cover exact decimals, validation, returned fulfillment matching, command retries and read-only recovery after confirmed dispatch. Live authenticated creation/dispatch against the database remains unverified without test credentials.
+
 - `pnpm typecheck` and `pnpm build` pass.
+- `pnpm test` covers tab-session restoration, invalid data, logout, `401`/`403`, network errors, and late responses from a previous login. Browser checks used isolated API fixtures to verify reload/logout and standard Tailwind utilities without touching live inventory.
 - Vite serves the app on port 3000. Unauthenticated calls through its proxy reach the backend and return the expected `401`.
 - The login screen was visually checked in the browser. Role-specific flows still require backend credentials for live verification.
 - Customer return creation, receipt, and inspection are wired to order-scoped routes. Supplier return creation is not exposed because the backend does not provide a batch discovery route. Existing supplier returns can be reviewed and posted by authorized users.

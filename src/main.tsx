@@ -1,4 +1,8 @@
 import { AppSelect } from "./components/AppSelect";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { queryClient } from "./query";
+import { SaleComposer } from "./sales/SaleComposer";
+import { readAttempt } from "./sales/checkout-storage";
 import "./tailwind.css";
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -38,7 +42,6 @@ import {
   type SaleList,
   type User,
 } from "./api";
-import "./style.css";
 import { PurchaseCreate } from "./PurchaseCreate";
 import { CustomerReturns } from "./CustomerReturns";
 import { ProductCreate, UnitCreate, EditRecord } from "./MasterForms";
@@ -112,7 +115,10 @@ function stateMessage(error: unknown, retry: () => void) {
   );
 }
 function App() {
-  const [user, setUser] = useState<User | null>(null),
+  const [user, setUser] = useState<User | null>(() => session.user()),
+    [restoring, setRestoring] = useState(() => !!session.get()),
+    [restoreError, setRestoreError] = useState<unknown>(null),
+    [restoreAttempt, setRestoreAttempt] = useState(0),
     [theme, setTheme] = useState(localStorage.getItem("sb-theme") || "light"),
     [page, setPage] = useState<Page>("Sales"),
     [mobile, setMobile] = useState(false);
@@ -121,9 +127,96 @@ function App() {
     localStorage.setItem("sb-theme", theme);
   }, [theme]);
   useEffect(() => {
-    if ("serviceWorker" in navigator)
+    if (!("serviceWorker" in navigator)) return;
+    if (import.meta.env.PROD) {
       navigator.serviceWorker.register("/sw.js").catch(() => {});
+    } else {
+      // Old shell caches must not serve stale Vite modules during development.
+      navigator.serviceWorker
+        .getRegistrations()
+        .then((registrations) => {
+          const scriptURL = new URL("/sw.js", location.origin).href;
+          return Promise.all(
+            registrations
+              .filter((registration) =>
+                [
+                  registration.active,
+                  registration.waiting,
+                  registration.installing,
+                ].some((worker) => worker?.scriptURL === scriptURL),
+              )
+              .map((registration) => registration.unregister()),
+          );
+        })
+        .catch(() => {});
+      if ("caches" in window)
+        caches
+          .keys()
+          .then((keys) =>
+            Promise.all(
+              keys
+                .filter((key) => key.startsWith("sb-shell-"))
+                .map((key) => caches.delete(key)),
+            ),
+          )
+          .catch(() => {});
+    }
   }, []);
+  useEffect(() => session.subscribe(() => setUser(session.user())), []);
+  useEffect(() => {
+    if (!session.get()) {
+      setRestoring(false);
+      return;
+    }
+    let active = true;
+    setRestoring(true);
+    setRestoreError(null);
+    // No /auth/me route exists. This verified read endpoint permits all roles.
+    request("/sale/?limit=1")
+      .then(() => {
+        if (active) setRestoring(false);
+      })
+      .catch((error) => {
+        if (!active) return;
+        if ((error as ApiError).status !== 401) setRestoreError(error);
+        setRestoring(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [restoreAttempt]);
+  if (restoring || (user && restoreError))
+    return (
+      <div className="login-wrap">
+        <div className="login-card">
+          <h1>
+            {restoring ? "Restoring your session…" : "Could not reconnect"}
+          </h1>
+          {restoring ? (
+            <p role="status">Checking your saved login with the server.</p>
+          ) : (
+            <>
+              <p role="alert">{(restoreError as Error).message}</p>
+              <button
+                className="primary"
+                onClick={() => setRestoreAttempt((value) => value + 1)}
+              >
+                Retry connection
+              </button>
+              <button
+                className="subtle"
+                onClick={() => {
+                  session.set(null);
+                  setRestoreError(null);
+                }}
+              >
+                Sign out
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    );
   if (!user) return <Login onLogin={setUser} />;
   return (
     <div className="shell">
@@ -244,7 +337,7 @@ function Login({ onLogin }: { onLogin: (u: User) => void }) {
         "/auth/login",
         { method: "POST", body: JSON.stringify({ email, password }) },
       );
-      session.set(r.token);
+      session.set(r.token, r.data.user);
       onLogin(r.data.user);
     } catch (e) {
       setError((e as Error).message);
@@ -303,7 +396,9 @@ function Sales({ user }: { user: User }) {
     [search, setSearch] = useState(""),
     [filter, setFilter] = useState(""),
     [selected, setSelected] = useState<number | null>(null),
-    [creating, setCreating] = useState(false),
+    [creating, setCreating] = useState(
+      () => user.role !== "AUDITOR" && !!readAttempt(user.id),
+    ),
     [page, setPage] = useState(1),
     [pages, setPages] = useState(1);
   async function load() {
@@ -325,6 +420,20 @@ function Sales({ user }: { user: User }) {
   useEffect(() => {
     load();
   }, [page, search, filter]);
+  if (creating)
+    return (
+      <SaleComposer
+        user={user}
+        close={() => {
+          setCreating(false);
+          load();
+        }}
+        saved={(id) => {
+          setCreating(false);
+          setSelected(id);
+        }}
+      />
+    );
   if (selected !== null)
     return (
       <SaleView
@@ -480,16 +589,6 @@ function Sales({ user }: { user: User }) {
           </div>
         </div>
       </div>
-      {creating && (
-        <SaleCreate
-          close={() => setCreating(false)}
-          done={(id) => {
-            setCreating(false);
-            if (id) setSelected(id);
-            else load();
-          }}
-        />
-      )}
     </>
   );
 }
@@ -890,229 +989,6 @@ function CommercialModal({
           </button>
           <button className="primary" disabled={busy}>
             Save changes
-          </button>
-        </div>
-      </form>
-    </Modal>
-  );
-}
-function SaleCreate({
-  close,
-  done,
-}: {
-  close: () => void;
-  done: (id?: number) => void;
-}) {
-  const [contacts, setContacts] = useState<Entity[]>([]),
-    [products, setProducts] = useState<Entity[]>([]),
-    [warehouses, setWarehouses] = useState<Entity[]>([]),
-    [productId, setProductId] = useState(""),
-    [units, setUnits] = useState<Entity[]>([]),
-    [buyerId, setBuyerId] = useState(""),
-    [unitId, setUnitId] = useState(""),
-    [warehouseId, setWarehouseId] = useState(""),
-    [quantity, setQuantity] = useState("1"),
-    [price, setPrice] = useState(""),
-    [paid, setPaid] = useState("0"),
-    [transactionStatus, setStatus] = useState("DRAFT"),
-    [error, setError] = useState(""),
-    [busy, setBusy] = useState(false),
-    [pending, setPending] = useState<{ key: string; body: unknown } | null>(
-      null,
-    );
-  useEffect(() => {
-    Promise.all([
-      request<ApiList<Entity>>("/contacts/?limit=100&type=BUYER"),
-      request<ApiList<Entity>>("/catalog/products?limit=100"),
-      request<ApiList<Entity>>("/warehouses/?limit=100"),
-    ])
-      .then(([c, p, w]) => {
-        setContacts(c.data);
-        setProducts(p.data);
-        setWarehouses(w.data);
-      })
-      .catch((e) => setError(e.message));
-  }, []);
-  useEffect(() => {
-    if (productId)
-      request<ApiList<Entity>>(`/catalog/products/${productId}/units?limit=100`)
-        .then((r) => setUnits(r.data))
-        .catch((e) => setError(e.message));
-  }, [productId]);
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    const body = pending?.body || {
-      buyerId: buyerId || null,
-      transactionStatus,
-      amountPaid: paid,
-      extraCost: "0",
-      items: [
-        {
-          productId,
-          unitId: Number(unitId),
-          quantityOrdered: Number(quantity),
-          quantityDelivered: 0,
-          fulfillments:
-            transactionStatus === "DRAFT"
-              ? []
-              : [
-                  {
-                    warehouseId: Number(warehouseId),
-                    quantityInOrderUnit: Number(quantity),
-                  },
-                ],
-          confirmedUnitSalePrice: price,
-        },
-      ],
-    };
-    const attempt = pending || { key: newKey(), body };
-    setPending(attempt);
-    setBusy(true);
-    setError("");
-    try {
-      const r = await command<{
-        data: { id?: number; order?: { id: number }; sale?: { id: number } };
-      }>("/sale/create", attempt.body, attempt.key);
-      setPending(null);
-      done(r.data?.id || r.data?.order?.id || r.data?.sale?.id);
-    } catch (e) {
-      const err = e as ApiError;
-      setError(
-        err.status === 0
-          ? "Network failed. Retry uses the same payload and key."
-          : err.message,
-      );
-      if (err.status !== 0) setPending(null);
-    } finally {
-      setBusy(false);
-    }
-  }
-  return (
-    <Modal title="New sale" close={close}>
-      <form onSubmit={submit}>
-        <p className="modal-intro">
-          Create a commercial order. Stock remains unchanged until a dispatch is
-          confirmed.
-        </p>
-        <div className="form-grid">
-          <label>
-            Buyer
-            <AppSelect
-              value={buyerId}
-              onValueChange={(value) => setBuyerId(value)}
-              options={[
-                { value: "", label: <>Walk-in customer</> },
-                ...contacts.map((c) => ({
-                  value: String(c.id),
-                  label: <>{c.name}</>,
-                })),
-              ]}
-            />
-          </label>
-          <label>
-            Status
-            <AppSelect
-              value={transactionStatus}
-              onValueChange={(value) => setStatus(value)}
-              options={[
-                { value: "DRAFT", label: <>DRAFT</> },
-                { value: "PENDING", label: <>PENDING</> },
-              ]}
-            />
-          </label>
-          <label>
-            Product
-            <AppSelect
-              required
-              value={productId}
-              onValueChange={(value) => {
-                setProductId(value);
-                setUnitId("");
-              }}
-              placeholder="Choose product"
-              options={[
-                ...products.map((p) => ({
-                  value: String(p.id),
-                  label: <>{p.name}</>,
-                })),
-              ]}
-            />
-          </label>
-          <label>
-            Product unit
-            <AppSelect
-              required
-              value={unitId}
-              onValueChange={(value) => setUnitId(value)}
-              placeholder="Choose unit"
-              options={[
-                ...units.map((u) => ({
-                  value: String(u.id),
-                  label: (
-                    <>
-                      {u.name} · {u.sku}
-                    </>
-                  ),
-                })),
-              ]}
-            />
-          </label>
-          <label>
-            Quantity ordered
-            <input
-              type="number"
-              min="1"
-              step="1"
-              required
-              value={quantity}
-              onChange={(e) => setQuantity(e.target.value)}
-            />
-          </label>
-          <label>
-            Unit sale price (₦)
-            <input
-              inputMode="decimal"
-              pattern="[0-9]+(\.[0-9]{1,4})?"
-              required
-              value={price}
-              onChange={(e) => setPrice(e.target.value)}
-            />
-          </label>
-          <label>
-            Amount paid (₦)
-            <input
-              inputMode="decimal"
-              pattern="[0-9]+(\.[0-9]{1,4})?"
-              required
-              value={paid}
-              onChange={(e) => setPaid(e.target.value)}
-            />
-          </label>
-          {transactionStatus !== "DRAFT" && (
-            <label>
-              Fulfillment warehouse
-              <AppSelect
-                required
-                value={warehouseId}
-                onValueChange={(value) => setWarehouseId(value)}
-                placeholder="Choose warehouse"
-                options={[
-                  ...warehouses.map((w) => ({
-                    value: String(w.id),
-                    label: <>{w.name}</>,
-                  })),
-                ]}
-              />
-            </label>
-          )}
-        </div>
-        {error && <div className="alert error">{error}</div>}
-        <div className="modal-actions">
-          <button type="button" className="subtle" onClick={close}>
-            Cancel
-          </button>
-          <button className="primary" disabled={busy}>
-            {busy ? "Creating…" : pending ? "Retry same sale" : "Create sale"}
           </button>
         </div>
       </form>
@@ -2367,4 +2243,8 @@ function DirectoryCreate({
     </Modal>
   );
 }
-createRoot(document.getElementById("root")!).render(<App />);
+createRoot(document.getElementById("root")!).render(
+  <QueryClientProvider client={queryClient}>
+    <App />
+  </QueryClientProvider>,
+);

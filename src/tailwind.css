@@ -1,11 +1,17 @@
-/* Preflight is intentionally omitted to preserve the existing application styles.
-   Prefix utilities with tw: (for example, tw:flex) to avoid existing class names. */
+@import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap");
+
+/* Preserve the existing design while allowing standard Tailwind utilities
+   to override component styles. Preflight remains disabled. */
 @layer theme, base, components, utilities;
-@import "tailwindcss/theme.css" layer(theme) prefix(tw);
-@import "tailwindcss/utilities.css" layer(utilities) source(none) prefix(tw);
+@import "tailwindcss/theme.css" layer(theme);
+@import "./components/ui/select.css" layer(components);
+@import "./style.css" layer(components);
+@import "./sales/sale-composer.css" layer(components);
+@import "tailwindcss/utilities.css" layer(utilities) source(none);
 
 /* Scan frontend source only, excluding the extracted backend reference. */
 @source "./";
+@source "../index.html";
 
 /* Follow the application's existing theme toggle and palette. */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
