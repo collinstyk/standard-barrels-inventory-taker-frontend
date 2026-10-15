@@ -2,6 +2,7 @@ import { AppSelect } from "./components/AppSelect";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "./query";
 import { SaleComposer } from "./sales/SaleComposer";
+import { decimal } from "./sales/checkout-model";
 import { readAttempt } from "./sales/checkout-storage";
 import "./tailwind.css";
 import React, { useEffect, useState } from "react";
@@ -42,7 +43,8 @@ import {
   type SaleList,
   type User,
 } from "./api";
-import { PurchaseCreate } from "./PurchaseCreate";
+import { PurchaseCreate, readPurchaseAttempt } from "./PurchaseCreate";
+import { ReceiptModal } from "./PurchaseReceipt";
 import { CustomerReturns } from "./CustomerReturns";
 import { ProductCreate, UnitCreate, EditRecord } from "./MasterForms";
 import { SupplierReturns } from "./SupplierReturns";
@@ -1002,6 +1004,7 @@ type Purchase = Entity & {
   receivingStatus: string;
   createdAt: string;
   totalPurchaseCost: string;
+  extraCost?: string;
   amountPaid: string;
   items?: Array<{
     id: number;
@@ -1016,6 +1019,7 @@ type Purchase = Entity & {
     status: string;
     receivedAt: string;
     items: Array<{
+      purchaseItemId: number;
       quantityInOrderUnit: number;
       quantityBase: number;
       warehouse: { name: string };
@@ -1032,7 +1036,9 @@ function Purchases({ user }: { user: User }) {
     [postKey, setPostKey] = useState(""),
     [postError, setPostError] = useState(""),
     [postBusy, setPostBusy] = useState(false),
-    [creating, setCreating] = useState(false),
+    [creating, setCreating] = useState(
+      () => user.role !== "AUDITOR" && !!readPurchaseAttempt(user.id),
+    ),
     [commercial, setCommercial] = useState(false);
   async function load() {
     setLoading(true);
@@ -1046,14 +1052,16 @@ function Purchases({ user }: { user: User }) {
       setLoading(false);
     }
   }
-  async function open(id: number) {
+  async function open(id: number): Promise<boolean> {
     setLoading(true);
     setError(null);
     try {
       const r = await request<{ data: Purchase }>(`/purchase/${id}`);
       setDetail(r.data);
+      return true;
     } catch (e) {
       setError(e);
+      return false;
     } finally {
       setLoading(false);
     }
@@ -1063,23 +1071,51 @@ function Purchases({ user }: { user: User }) {
   }, []);
   async function post() {
     if (!detail || posting === null || postBusy) return;
-    const key = postKey || newKey();
+    const savedKey = `sb-purchase-post-v1:${user.id}:${detail.id}:${posting}`;
+    const key = postKey || sessionStorage.getItem(savedKey) || newKey();
+    try {
+      sessionStorage.setItem(savedKey, key);
+    } catch {
+      setPostError(
+        "Browser session storage is needed to safely retry this posting after a reload.",
+      );
+      return;
+    }
     setPostKey(key);
     setPostError("");
     setPostBusy(true);
     try {
       await command(`/purchase/${detail.id}/receipts/${posting}/post`, {}, key);
+      sessionStorage.removeItem(savedKey);
       setPosting(null);
       setPostKey("");
       open(Number(detail.id));
     } catch (e) {
       const err = e as ApiError;
       setPostError(err.message);
-      if (err.status !== 0) setPostKey("");
+      if (err.status === 400 || err.status === 403) {
+        sessionStorage.removeItem(savedKey);
+        setPostKey("");
+      }
     } finally {
       setPostBusy(false);
     }
   }
+  if (creating)
+    return (
+      <PurchaseCreate
+        userId={user.id}
+        close={() => {
+          setCreating(false);
+          load();
+        }}
+        done={(id, receiveNow) => {
+          setCreating(false);
+          setReceipt(receiveNow);
+          void open(id);
+        }}
+      />
+    );
   return (
     <>
       {detail ? (
@@ -1178,7 +1214,7 @@ function Purchases({ user }: { user: User }) {
             {detail.receipts?.length ? (
               <div className="history">
                 {detail.receipts.map((r) => (
-                  <div className="history-row" key={r.id}>
+                  <div className="history-row purchase-history-row" key={r.id}>
                     <div className="history-icon">
                       <PackageCheck size={18} />
                     </div>
@@ -1201,6 +1237,30 @@ function Purchases({ user }: { user: User }) {
                         Post receipt
                       </button>
                     )}
+                    <div className="purchase-history-lines">
+                      {r.items.map((item, index) => {
+                        const ordered = detail.items?.find(
+                          (line) => line.id === item.purchaseItemId,
+                        );
+                        return (
+                          <div key={`${item.purchaseItemId}-${index}`}>
+                            <b>
+                              {ordered?.product.name ||
+                                `Order line #${item.purchaseItemId}`}
+                            </b>
+                            <span>
+                              {item.quantityInOrderUnit}{" "}
+                              {ordered?.unit.name || "units"}
+                              {" · "}
+                              {item.quantityBase}{" "}
+                              {ordered?.product.baseUnit || "base units"}
+                              {" · "}
+                              {item.warehouse.name}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1222,10 +1282,13 @@ function Purchases({ user }: { user: User }) {
           {receipt && (
             <ReceiptModal
               purchase={detail}
+              userId={user.id}
               close={() => setReceipt(false)}
-              done={() => {
+              done={(receiptId) => {
                 setReceipt(false);
-                open(Number(detail.id));
+                void open(Number(detail.id)).then((loaded) => {
+                  if (loaded) setPosting(receiptId);
+                });
               }}
             />
           )}
@@ -1238,6 +1301,28 @@ function Purchases({ user }: { user: User }) {
                 Posting this receipt increases stock. Confirm the received
                 quantities and warehouse are correct.
               </p>
+              {detail.receipts
+                ?.find((item) => item.id === posting)
+                ?.items.map((item, index) => {
+                  const ordered = detail.items?.find(
+                    (line) => line.id === item.purchaseItemId,
+                  );
+                  return (
+                    <div
+                      className="sale-info-row"
+                      key={`${item.purchaseItemId}-${index}`}
+                    >
+                      <span>
+                        {ordered?.product.name ||
+                          `Order line #${item.purchaseItemId}`}
+                      </span>
+                      <b>
+                        {item.quantityInOrderUnit}{" "}
+                        {ordered?.unit.name || "units"} · {item.warehouse.name}
+                      </b>
+                    </div>
+                  );
+                })}
               {postError && <div className="alert error">{postError}</div>}
               <div className="modal-actions">
                 <button className="subtle" onClick={() => setPosting(null)}>
@@ -1325,15 +1410,6 @@ function Purchases({ user }: { user: User }) {
               <div className="state">No purchases found.</div>
             )}
           </div>
-          {creating && (
-            <PurchaseCreate
-              close={() => setCreating(false)}
-              done={() => {
-                setCreating(false);
-                load();
-              }}
-            />
-          )}
         </>
       )}
     </>
@@ -1352,6 +1428,15 @@ function PurchaseCommercial({
     [amountPaid, setPaid] = useState(purchase.amountPaid),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
+  const due = decimal(purchase.totalPurchaseCost);
+  const extra = decimal(purchase.extraCost ?? "0");
+  const paidValue = decimal(amountPaid);
+  const fullyPaid =
+    purchase.transactionStatus !== "CANCELLED" &&
+    due !== null &&
+    extra !== null &&
+    paidValue !== null &&
+    paidValue >= due + extra;
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -1359,7 +1444,10 @@ function PurchaseCommercial({
     try {
       await request(`/purchase/${purchase.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ transactionStatus, amountPaid }),
+        body: JSON.stringify({
+          transactionStatus: fullyPaid ? "COMPLETED" : transactionStatus,
+          amountPaid,
+        }),
       });
       done();
     } catch (e) {
@@ -1372,13 +1460,15 @@ function PurchaseCommercial({
     <Modal title="Update purchase commercial status" close={close}>
       <form onSubmit={submit}>
         <p className="modal-intro">
-          Receiving remains separate from payment and commercial status.
+          Paying in full selects COMPLETED for the commercial status. Receiving
+          remains separate and changes only when a receipt is posted.
         </p>
         <label>
           Status
           <AppSelect
-            value={transactionStatus}
+            value={fullyPaid ? "COMPLETED" : transactionStatus}
             onValueChange={(value) => setStatus(value)}
+            disabled={fullyPaid}
             options={[
               { value: "DRAFT", label: <>DRAFT</> },
               { value: "PENDING", label: <>PENDING</> },
@@ -1391,12 +1481,26 @@ function PurchaseCommercial({
           Amount paid (₦)
           <input
             value={amountPaid}
-            onChange={(e) => setPaid(e.target.value)}
+            onChange={(e) => {
+              setPaid(e.target.value);
+              if (
+                transactionStatus === "COMPLETED" &&
+                decimal(e.target.value) !== null &&
+                due !== null &&
+                extra !== null &&
+                decimal(e.target.value)! < due + extra
+              )
+                setStatus("PENDING");
+            }}
             inputMode="decimal"
             pattern="[0-9]+(\.[0-9]{1,4})?"
             required
           />
         </label>
+        <p className="sale-help">
+          Amount paid is the cumulative total. This updates a status; it does
+          not record a separate payment transaction.
+        </p>
         {error && <div className="alert error">{error}</div>}
         <div className="modal-actions">
           <button type="button" className="subtle" onClick={close}>
@@ -1404,150 +1508,6 @@ function PurchaseCommercial({
           </button>
           <button className="primary" disabled={busy}>
             Save changes
-          </button>
-        </div>
-      </form>
-    </Modal>
-  );
-}
-function ReceiptModal({
-  purchase,
-  close,
-  done,
-}: {
-  purchase: Purchase;
-  close: () => void;
-  done: () => void;
-}) {
-  const [warehouses, setWarehouses] = useState<Entity[]>([]),
-    [itemId, setItemId] = useState(""),
-    [warehouseId, setWarehouseId] = useState(""),
-    [quantity, setQuantity] = useState("1"),
-    [cost, setCost] = useState("0"),
-    [expiry, setExpiry] = useState(""),
-    [error, setError] = useState(""),
-    [busy, setBusy] = useState(false),
-    [pending, setPending] = useState<{ key: string; body: unknown } | null>(
-      null,
-    );
-  useEffect(() => {
-    request<ApiList<Entity>>("/warehouses/?limit=100")
-      .then((r) => setWarehouses(r.data))
-      .catch((e) => setError(e.message));
-  }, []);
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    const body = pending?.body || {
-      receivedAt: new Date().toISOString(),
-      items: [
-        {
-          purchaseItemId: Number(itemId),
-          warehouseId: Number(warehouseId),
-          quantityInOrderUnit: Number(quantity),
-          actualUnitCost: cost,
-          ...(expiry ? { expiryDate: expiry } : {}),
-        },
-      ],
-    };
-    const attempt = pending || { key: newKey(), body };
-    setPending(attempt);
-    setBusy(true);
-    setError("");
-    try {
-      await command(
-        `/purchase/${purchase.id}/receipts`,
-        attempt.body,
-        attempt.key,
-      );
-      setPending(null);
-      done();
-    } catch (e) {
-      const err = e as ApiError;
-      setError(err.message);
-      if (err.status !== 0) setPending(null);
-    } finally {
-      setBusy(false);
-    }
-  }
-  return (
-    <Modal title="Draft goods receipt" close={close}>
-      <form onSubmit={submit}>
-        <p className="modal-intro">
-          Record received goods now; stock increases only after posting this
-          draft.
-        </p>
-        <label>
-          Purchase item
-          <AppSelect
-            required
-            value={itemId}
-            onValueChange={(value) => setItemId(value)}
-            placeholder="Choose item"
-            options={[
-              ...(purchase.items ?? []).map((i) => ({
-                value: String(i.id),
-                label: (
-                  <>
-                    {i.product.name} · {i.unit.name}
-                  </>
-                ),
-              })),
-            ]}
-          />
-        </label>
-        <label>
-          Warehouse
-          <AppSelect
-            required
-            value={warehouseId}
-            onValueChange={(value) => setWarehouseId(value)}
-            placeholder="Choose warehouse"
-            options={[
-              ...warehouses.map((w) => ({
-                value: String(w.id),
-                label: <>{w.name}</>,
-              })),
-            ]}
-          />
-        </label>
-        <div className="form-grid">
-          <label>
-            Quantity in order unit
-            <input
-              type="number"
-              min="1"
-              step="1"
-              required
-              value={quantity}
-              onChange={(e) => setQuantity(e.target.value)}
-            />
-          </label>
-          <label>
-            Actual unit cost (₦)
-            <input
-              required
-              inputMode="decimal"
-              pattern="[0-9]+(\.[0-9]{1,4})?"
-              value={cost}
-              onChange={(e) => setCost(e.target.value)}
-            />
-          </label>
-        </div>
-        <label>
-          Expiry date, if applicable
-          <input
-            type="date"
-            value={expiry}
-            onChange={(e) => setExpiry(e.target.value)}
-          />
-        </label>
-        {error && <div className="alert error">{error}</div>}
-        <div className="modal-actions">
-          <button type="button" className="subtle" onClick={close}>
-            Cancel
-          </button>
-          <button className="primary" disabled={busy}>
-            {pending ? "Retry same receipt" : "Save draft receipt"}
           </button>
         </div>
       </form>

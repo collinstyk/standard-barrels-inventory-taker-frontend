@@ -7,6 +7,7 @@
 @import "./components/ui/select.css" layer(components);
 @import "./style.css" layer(components);
 @import "./sales/sale-composer.css" layer(components);
+@import "./purchase.css" layer(components);
 @import "tailwindcss/utilities.css" layer(utilities) source(none);
 
 /* Scan frontend source only, excluding the extracted backend reference. */
