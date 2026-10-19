@@ -22,6 +22,12 @@ export class ApiError extends Error {
   }
 }
 
+const writeListeners = new Set<() => void>();
+export function subscribeToWrites(listener: () => void) {
+  writeListeners.add(listener);
+  return () => writeListeners.delete(listener);
+}
+
 export async function request<T>(
   path: string,
   options: RequestInit = {},
@@ -56,6 +62,8 @@ export async function request<T>(
         payload.error ||
         `Request failed (${response.status}).`,
     );
+  if (options.method && options.method.toUpperCase() !== "GET")
+    writeListeners.forEach((listener) => listener());
   return payload as T;
 }
 

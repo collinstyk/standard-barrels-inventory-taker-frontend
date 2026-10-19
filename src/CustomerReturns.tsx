@@ -1,5 +1,6 @@
 import { AppSelect } from "./components/AppSelect";
 import React, { useEffect, useState } from "react";
+import { cachedRequest, refreshRequest } from "./query";
 import { ApiError, command, date, newKey, request, type Role } from "./api";
 import { ReturnInspection } from "./ReturnInspection";
 type SaleItem = {
@@ -52,13 +53,13 @@ export function CustomerReturns({
     [selected, setSelected] = useState<Return | null>(null),
     [receiving, setReceiving] = useState(false),
     [inspecting, setInspecting] = useState(false);
-  async function load() {
+  async function load(force = false) {
     setLoading(true);
     setError("");
     try {
-      const r = await request<{ data: { returns: Return[] } }>(
-        `/sale/${saleId}/returns`,
-      );
+      const r = await (force ? refreshRequest : cachedRequest)<{
+        data: { returns: Return[] };
+      }>(`/sale/${saleId}/returns`);
       setRows(r.data.returns);
     } catch (e) {
       setError((e as Error).message);
@@ -87,7 +88,7 @@ export function CustomerReturns({
       ) : error ? (
         <div className="empty-inline">
           {error}{" "}
-          <button className="subtle" onClick={load}>
+          <button className="subtle" onClick={() => load(true)}>
             Retry
           </button>
         </div>

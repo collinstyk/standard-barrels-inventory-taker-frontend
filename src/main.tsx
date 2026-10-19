@@ -1,8 +1,8 @@
 import { AppSelect } from "./components/AppSelect";
 import { AmountInput } from "./components/AmountInput";
 import { statusTone } from "./components/statusTone";
-import { QueryClientProvider } from "@tanstack/react-query";
-import { queryClient } from "./query";
+import { QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { cachedRequest, queryClient, refreshRequest } from "./query";
 import { SaleComposer } from "./sales/SaleComposer";
 import { decimal } from "./sales/checkout-model";
 import { readAttempt } from "./sales/checkout-storage";
@@ -106,13 +106,19 @@ function stateMessage(error: unknown, retry: () => void) {
     </div>
   );
 }
+function warehouseIdFromHash() {
+  const match = window.location.hash.match(/^#warehouse\/(\d+)$/);
+  return match ? match[1] : null;
+}
 function App() {
   const [user, setUser] = useState<User | null>(() => session.user()),
     [restoring, setRestoring] = useState(() => !!session.get()),
     [restoreError, setRestoreError] = useState<unknown>(null),
     [restoreAttempt, setRestoreAttempt] = useState(0),
     [theme, setTheme] = useState(localStorage.getItem("sb-theme") || "light"),
-    [page, setPage] = useState<Page>("Sales"),
+    [page, setPage] = useState<Page>(() =>
+      warehouseIdFromHash() ? "Warehouses" : "Sales",
+    ),
     [mobile, setMobile] = useState(false);
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -155,6 +161,13 @@ function App() {
     }
   }, []);
   useEffect(() => session.subscribe(() => setUser(session.user())), []);
+  useEffect(() => {
+    const syncWarehouseRoute = () => {
+      if (warehouseIdFromHash()) setPage("Warehouses");
+    };
+    window.addEventListener("hashchange", syncWarehouseRoute);
+    return () => window.removeEventListener("hashchange", syncWarehouseRoute);
+  }, []);
   useEffect(() => {
     if (!session.get()) {
       setRestoring(false);
@@ -240,6 +253,8 @@ function App() {
                 key={name}
                 className={page === name ? "active" : ""}
                 onClick={() => {
+                  if (window.location.hash.startsWith("#warehouse/"))
+                    window.location.hash = "warehouses";
                   setPage(name);
                   setMobile(false);
                 }}
@@ -393,14 +408,17 @@ function Sales({ user }: { user: User }) {
     ),
     [page, setPage] = useState(1),
     [pages, setPages] = useState(1);
-  async function load() {
+  async function load(force = false) {
     setLoading(true);
     setError(null);
     try {
       const q = new URLSearchParams({ page: String(page), limit: "20" });
       if (search.trim()) q.set("search", search.trim());
       if (filter) q.set("deliveryStatus", filter);
-      const r = await request<ApiList<SaleList>>(`/sale/?${q}`);
+      const path = `/sale/?${q}`;
+      const r = await (force ? refreshRequest : cachedRequest)<
+        ApiList<SaleList>
+      >(path);
       setRows(r.data);
       setPages(r.pagination?.totalPages || 1);
     } catch (e) {
@@ -481,7 +499,7 @@ function Sales({ user }: { user: User }) {
             <h2>Sale orders</h2>
             <p>Live records from the inventory service</p>
           </div>
-          <button className="subtle" onClick={load}>
+          <button className="subtle" onClick={() => load(true)}>
             <RefreshCw size={16} /> Refresh
           </button>
         </div>
@@ -516,7 +534,7 @@ function Sales({ user }: { user: User }) {
         {loading ? (
           <div className="state">Loading sales…</div>
         ) : error ? (
-          stateMessage(error, load)
+          stateMessage(error, () => load(true))
         ) : rows.length === 0 ? (
           <div className="state">
             <ShoppingCart size={30} />
@@ -598,11 +616,14 @@ function SaleView({
     [busy, setBusy] = useState(true),
     [dispatch, setDispatch] = useState(false),
     [updating, setUpdating] = useState(false);
-  async function load() {
+  async function load(force = false) {
     setBusy(true);
     setError(null);
     try {
-      const r = await request<{ data: SaleDetail }>(`/sale/${id}`);
+      const path = `/sale/${id}`;
+      const r = await (force ? refreshRequest : cachedRequest)<{
+        data: SaleDetail;
+      }>(path);
       setData(r.data);
     } catch (e) {
       setError(e);
@@ -621,7 +642,7 @@ function SaleView({
       {busy ? (
         <div className="state">Loading sale…</div>
       ) : error ? (
-        stateMessage(error, load)
+        stateMessage(error, () => load(true))
       ) : (
         data && (
           <>
@@ -1033,11 +1054,13 @@ function Purchases({ user }: { user: User }) {
       () => user.role !== "AUDITOR" && !!readPurchaseAttempt(user.id),
     ),
     [commercial, setCommercial] = useState(false);
-  async function load() {
+  async function load(force = false) {
     setLoading(true);
     setError(null);
     try {
-      const r = await request<ApiList<Purchase>>("/purchase/?limit=50");
+      const r = await (force ? refreshRequest : cachedRequest)<
+        ApiList<Purchase>
+      >("/purchase/?limit=50");
       setRows(r.data);
     } catch (e) {
       setError(e);
@@ -1049,7 +1072,7 @@ function Purchases({ user }: { user: User }) {
     setLoading(true);
     setError(null);
     try {
-      const r = await request<{ data: Purchase }>(`/purchase/${id}`);
+      const r = await cachedRequest<{ data: Purchase }>(`/purchase/${id}`);
       setDetail(r.data);
       return true;
     } catch (e) {
@@ -1354,14 +1377,14 @@ function Purchases({ user }: { user: User }) {
           <div className="panel">
             <div className="panel-head">
               <h2>Purchase orders</h2>
-              <button className="subtle" onClick={load}>
+              <button className="subtle" onClick={() => load(true)}>
                 <RefreshCw size={16} /> Refresh
               </button>
             </div>
             {loading ? (
               <div className="state">Loading purchases…</div>
             ) : error ? (
-              stateMessage(error, load)
+              stateMessage(error, () => load(true))
             ) : rows.length ? (
               <div className="table-scroll">
                 <table>
@@ -1524,7 +1547,7 @@ function Inventory({ user }: { user: User }) {
     [unitId, setUnitId] = useState(""),
     [availability, setAvailability] = useState<any>(null),
     [adjusting, setAdjusting] = useState(false);
-  async function load() {
+  async function load(force = false) {
     setLoading(true);
     setError(null);
     try {
@@ -1532,7 +1555,9 @@ function Inventory({ user }: { user: User }) {
         setLoading(false);
         return;
       }
-      const r = await request<any>(`/inventory/${tab}?limit=50`);
+      const r = await (force ? refreshRequest : cachedRequest)<any>(
+        `/inventory/${tab}?limit=50`,
+      );
       setData(r.data || []);
     } catch (e) {
       setError(e);
@@ -1544,13 +1569,15 @@ function Inventory({ user }: { user: User }) {
     load();
   }, [tab]);
   useEffect(() => {
-    request<ApiList<Entity>>("/catalog/products?limit=100")
+    cachedRequest<ApiList<Entity>>("/catalog/products?limit=100")
       .then((r) => setProducts(r.data))
       .catch(() => {});
   }, []);
   useEffect(() => {
     if (productId)
-      request<ApiList<Entity>>(`/catalog/products/${productId}/units?limit=100`)
+      cachedRequest<ApiList<Entity>>(
+        `/catalog/products/${productId}/units?limit=100`,
+      )
         .then((r) => setUnits(r.data))
         .catch(() => {});
   }, [productId]);
@@ -1694,14 +1721,14 @@ function Inventory({ user }: { user: User }) {
               <h2>
                 {tab === "low-stock" ? "Low stock alerts" : "Expiring soon"}
               </h2>
-              <button className="subtle" onClick={load}>
+              <button className="subtle" onClick={() => load(true)}>
                 <RefreshCw size={16} /> Refresh
               </button>
             </div>
             {loading ? (
               <div className="state">Loading alerts…</div>
             ) : error ? (
-              stateMessage(error, load)
+              stateMessage(error, () => load(true))
             ) : data.length ? (
               <div className="alert-list">
                 {data.map((r, i) => (
@@ -1873,8 +1900,11 @@ function Directory({ page, user }: { page: Page; user: User }) {
     [child, setChild] = useState<Entity[]>([]),
     [unitCreating, setUnitCreating] = useState(false),
     [editing, setEditing] = useState(false),
-    [unitEditing, setUnitEditing] = useState<Entity | null>(null);
-  async function load() {
+    [unitEditing, setUnitEditing] = useState<Entity | null>(null),
+    [warehouseId, setWarehouseId] = useState<string | null>(() =>
+      warehouseIdFromHash(),
+    );
+  async function load(force = false) {
     setLoading(true);
     setError(null);
     try {
@@ -1882,7 +1912,7 @@ function Directory({ page, user }: { page: Page; user: User }) {
         setRows([]);
         return;
       }
-      const r = await request<ApiList<Entity>>(
+      const r = await (force ? refreshRequest : cachedRequest)<ApiList<Entity>>(
         `${path}${path.includes("?") ? "&" : "?"}limit=100`,
       );
       setRows(r.data);
@@ -1894,16 +1924,31 @@ function Directory({ page, user }: { page: Page; user: User }) {
   }
   useEffect(() => {
     setSelected(null);
-    load();
-  }, [page]);
+    if (page !== "Warehouses" || !warehouseId) load();
+  }, [page, warehouseId]);
+  useEffect(() => {
+    const sync = () => setWarehouseId(warehouseIdFromHash());
+    window.addEventListener("hashchange", sync);
+    return () => window.removeEventListener("hashchange", sync);
+  }, []);
   useEffect(() => {
     if (selected && page === "Products")
-      request<ApiList<Entity>>(
+      cachedRequest<ApiList<Entity>>(
         `/catalog/products/${selected.id}/units?limit=100`,
       )
         .then((r) => setChild(r.data))
         .catch((e) => setError(e));
   }, [selected]);
+  if (page === "Warehouses" && warehouseId)
+    return (
+      <WarehouseDetail
+        id={warehouseId}
+        user={user}
+        back={() => {
+          window.location.hash = "warehouses";
+        }}
+      />
+    );
   if (!path)
     return (
       <>
@@ -1946,14 +1991,14 @@ function Directory({ page, user }: { page: Page; user: User }) {
       <div className="panel">
         <div className="panel-head">
           <h2>{page}</h2>
-          <button className="subtle" onClick={load}>
+          <button className="subtle" onClick={() => load(true)}>
             <RefreshCw size={16} /> Refresh
           </button>
         </div>
         {loading ? (
           <div className="state">Loading {page.toLowerCase()}…</div>
         ) : error ? (
-          stateMessage(error, load)
+          stateMessage(error, () => load(true))
         ) : rows.length ? (
           <div className="table-scroll">
             <table>
@@ -1970,9 +2015,19 @@ function Directory({ page, user }: { page: Page; user: User }) {
                 {rows.map((r) => (
                   <tr
                     key={r.id}
-                    onClick={() => setSelected(r)}
+                    onClick={() =>
+                      page === "Warehouses"
+                        ? (window.location.hash = `warehouse/${r.id}`)
+                        : setSelected(r)
+                    }
                     tabIndex={0}
-                    onKeyDown={(e) => e.key === "Enter" && setSelected(r)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        if (page === "Warehouses")
+                          window.location.hash = `warehouse/${r.id}`;
+                        else setSelected(r);
+                      }
+                    }}
                   >
                     <td>
                       <b>{r.name}</b>
@@ -1999,7 +2054,7 @@ function Directory({ page, user }: { page: Page; user: User }) {
           </div>
         )}
       </div>
-      {selected && (
+      {selected && page !== "Warehouses" && (
         <Modal title={selected.name || page} close={() => setSelected(null)}>
           <div className="detail-pairs">
             {Object.entries(selected)
@@ -2053,7 +2108,7 @@ function Directory({ page, user }: { page: Page; user: User }) {
           close={() => setUnitCreating(false)}
           done={() => {
             setUnitCreating(false);
-            request<ApiList<Entity>>(
+            refreshRequest<ApiList<Entity>>(
               `/catalog/products/${selected.id}/units`,
             ).then((r) => setChild(r.data));
           }}
@@ -2067,7 +2122,7 @@ function Directory({ page, user }: { page: Page; user: User }) {
           close={() => setUnitEditing(null)}
           done={() => {
             setUnitEditing(null);
-            request<ApiList<Entity>>(
+            refreshRequest<ApiList<Entity>>(
               `/catalog/products/${selected.id}/units`,
             ).then((r) => setChild(r.data));
           }}
@@ -2114,6 +2169,119 @@ function Directory({ page, user }: { page: Page; user: User }) {
             }}
           />
         ))}
+    </>
+  );
+}
+type WarehouseRecord = {
+  id: number;
+  name: string;
+  location: string | null;
+  batchCount: number;
+};
+function WarehouseDetail({
+  id,
+  user,
+  back,
+}: {
+  id: string;
+  user: User;
+  back: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const path = `/warehouses/${id}`;
+  const warehouse = useQuery({
+    queryKey: ["api-read", path],
+    queryFn: () => request<{ data: WarehouseRecord }>(path),
+    staleTime: 60_000,
+  });
+  return (
+    <>
+      <button className="back" onClick={back}>
+        <ArrowLeft size={17} /> All warehouses
+      </button>
+      {warehouse.isPending ? (
+        <div className="state">Loading warehouse…</div>
+      ) : warehouse.isError ? (
+        stateMessage(warehouse.error, () => {
+          void warehouse.refetch();
+        })
+      ) : (
+        <>
+          <div className="page-head">
+            <div>
+              <div className="eyebrow">
+                WAREHOUSE / #{warehouse.data.data.id}
+              </div>
+              <h1>{warehouse.data.data.name}</h1>
+              <p>{warehouse.data.data.location || "No location recorded"}</p>
+            </div>
+            <div className="head-actions">
+              <button
+                className="subtle"
+                onClick={() => {
+                  void warehouse.refetch();
+                }}
+              >
+                <RefreshCw size={16} /> Refresh
+              </button>
+              {["ADMIN", "MANAGER"].includes(user.role) && (
+                <button className="primary" onClick={() => setEditing(true)}>
+                  Edit warehouse
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="summary-grid warehouse-summary">
+            <div className="summary">
+              <span>Warehouse ID</span>
+              <strong>#{warehouse.data.data.id}</strong>
+            </div>
+            <div className="summary">
+              <span>Location</span>
+              <strong>{warehouse.data.data.location || "—"}</strong>
+            </div>
+            <div className="summary">
+              <span>Inventory batches</span>
+              <strong>{warehouse.data.data.batchCount}</strong>
+            </div>
+          </div>
+          <div className="panel warehouse-details">
+            <div className="panel-head">
+              <h2>Warehouse details</h2>
+            </div>
+            <div className="detail-pairs">
+              <div>
+                <span>Name</span>
+                <b>{warehouse.data.data.name}</b>
+              </div>
+              <div>
+                <span>Location</span>
+                <b>{warehouse.data.data.location || "—"}</b>
+              </div>
+              <div>
+                <span>ID</span>
+                <b>{warehouse.data.data.id}</b>
+              </div>
+              <div>
+                <span>Inventory batches</span>
+                <b>{warehouse.data.data.batchCount}</b>
+              </div>
+            </div>
+          </div>
+          {editing && (
+            <EditRecord
+              path={path}
+              record={warehouse.data.data}
+              fields={["name", "location"]}
+              close={() => setEditing(false)}
+              done={() => {
+                setEditing(false);
+                void warehouse.refetch();
+              }}
+            />
+          )}
+        </>
+      )}
     </>
   );
 }

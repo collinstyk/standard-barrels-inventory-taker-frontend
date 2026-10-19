@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { cachedRequest } from "./query";
 import { ArrowLeft, ArrowRight, Plus, RefreshCw, X } from "lucide-react";
 import { AppSelect } from "./components/AppSelect";
 import { AmountInput } from "./components/AmountInput";
@@ -62,7 +63,7 @@ async function allPages<T>(path: string): Promise<T[]> {
   const rows: T[] = [];
   let page = 1;
   while (true) {
-    const response = await request<ApiList<T>>(
+    const response = await cachedRequest<ApiList<T>>(
       `${path}${path.includes("?") ? "&" : "?"}limit=100&page=${page}`,
     );
     rows.push(...response.data);
@@ -138,8 +139,11 @@ export function PurchaseCreate({
   const unitsQuery = useQuery({
     queryKey: ["product-units", userId, productId],
     queryFn: async () =>
-      (await request<{ data: Unit[] }>(`/catalog/products/${productId}/units`))
-        .data,
+      (
+        await cachedRequest<{ data: Unit[] }>(
+          `/catalog/products/${productId}/units`,
+        )
+      ).data,
     enabled: !!productId,
   });
   const units = unitsQuery.data || [],

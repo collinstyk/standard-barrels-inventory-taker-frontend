@@ -9,7 +9,7 @@ const asUrl = (source) =>
 let counter = 0;
 async function loadClient() {
   const authUrl = asUrl(
-    `export const listeners = new Set(); export class ApiError extends Error {} export const session={subscribe:fn=>listeners.add(fn)}; // ${counter++}`,
+    `export const listeners = new Set(); export const writes = new Set(); export let reads = 0; export class ApiError extends Error {} export const session={subscribe:fn=>listeners.add(fn)}; export const subscribeToWrites=fn=>writes.add(fn); export const request=async()=> ++reads; // ${counter++}`,
   );
   const source = await readFile(
     new URL("../src/query.ts", import.meta.url),
@@ -27,8 +27,10 @@ async function loadClient() {
       '"@tanstack/react-query"',
       JSON.stringify(import.meta.resolve("@tanstack/react-query")),
     );
+  const module = await import(asUrl(compiled));
   return {
-    client: (await import(asUrl(compiled))).queryClient,
+    ...module,
+    client: module.queryClient,
     auth: await import(authUrl),
   };
 }
@@ -41,10 +43,21 @@ test("query reads share cached results, invalidate, and clear on session change"
   };
   assert.equal(await client.fetchQuery(query), 1);
   assert.equal(await client.fetchQuery(query), 1);
-  await client.invalidateQueries({ queryKey: query.queryKey });
+  auth.writes.forEach((listener) => listener());
   assert.equal(await client.fetchQuery(query), 2);
+  await client.invalidateQueries({ queryKey: query.queryKey });
+  assert.equal(await client.fetchQuery(query), 3);
   auth.listeners.forEach((listener) => listener());
   assert.equal(client.getQueryData(query.queryKey), undefined);
+  client.clear();
+});
+test("endpoint reads reuse cache, refresh explicitly, and invalidate after writes", async () => {
+  const { cachedRequest, refreshRequest, client, auth } = await loadClient();
+  assert.equal(await cachedRequest("/warehouses/?limit=100"), 1);
+  assert.equal(await cachedRequest("/warehouses/?limit=100"), 1);
+  assert.equal(await refreshRequest("/warehouses/?limit=100"), 2);
+  auth.writes.forEach((listener) => listener());
+  assert.equal(await cachedRequest("/warehouses/?limit=100"), 3);
   client.clear();
 });
 test("commands fail immediately offline and never pause for automatic replay", async () => {

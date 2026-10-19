@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { cachedRequest } from "./query";
 import { AppSelect } from "./components/AppSelect";
 import { AmountInput } from "./components/AmountInput";
 import { ApiError, command, newKey, request, type ApiList } from "./api";
@@ -54,7 +55,7 @@ async function warehouses(): Promise<Warehouse[]> {
   const rows: Warehouse[] = [];
   let page = 1;
   while (true) {
-    const response = await request<ApiList<Warehouse>>(
+    const response = await cachedRequest<ApiList<Warehouse>>(
       `/warehouses/?limit=100&page=${page}`,
     );
     rows.push(...response.data);

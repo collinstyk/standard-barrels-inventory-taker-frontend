@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { cachedRequest, refreshRequest } from "./query";
 import { ApiError, command, date, newKey, request, type Role } from "./api";
 type Return = {
   id: number;
@@ -24,13 +25,13 @@ export function SupplierReturns({
     [posting, setPosting] = useState<number | null>(null),
     [busy, setBusy] = useState(false),
     [key, setKey] = useState("");
-  async function load() {
+  async function load(force = false) {
     setLoading(true);
     setError("");
     try {
-      const r = await request<{ data: { returns: Return[] } }>(
-        `/purchase/${purchaseId}/returns`,
-      );
+      const r = await (force ? refreshRequest : cachedRequest)<{
+        data: { returns: Return[] };
+      }>(`/purchase/${purchaseId}/returns`);
       setRows(r.data.returns);
     } catch (e) {
       setError((e as Error).message);
@@ -77,7 +78,7 @@ export function SupplierReturns({
       ) : error ? (
         <div className="empty-inline">
           {error}{" "}
-          <button className="subtle" onClick={load}>
+          <button className="subtle" onClick={() => load(true)}>
             Retry
           </button>
         </div>

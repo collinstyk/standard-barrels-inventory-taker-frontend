@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { cachedRequest } from "../query";
 import { StockPreview } from "./StockPreview";
 import {
   ArrowLeft,
@@ -66,7 +67,7 @@ async function allPages<T>(path: string): Promise<T[]> {
   const rows: T[] = [];
   let page = 1;
   while (true) {
-    const result = await request<ApiList<T>>(
+    const result = await cachedRequest<ApiList<T>>(
       `${path}${path.includes("?") ? "&" : "?"}limit=100&page=${page}`,
     );
     rows.push(...result.data);
@@ -357,7 +358,7 @@ export function SaleComposer({
     queryKey: ["product-units", user.id, productId],
     queryFn: async () =>
       (
-        await request<{ data: ProductUnit[] }>(
+        await cachedRequest<{ data: ProductUnit[] }>(
           `/catalog/products/${productId}/units`,
         )
       ).data,

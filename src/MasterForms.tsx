@@ -1,6 +1,7 @@
 import { AppSelect } from "./components/AppSelect";
 import { AmountInput } from "./components/AmountInput";
 import React, { useEffect, useState } from "react";
+import { cachedRequest } from "./query";
 import { money, request, type ApiList } from "./api";
 type Entry = { id: string | number; name: string };
 function Frame({
@@ -47,7 +48,7 @@ export function ProductCreate({
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   useEffect(() => {
-    request<ApiList<Entry>>("/catalog/categories?limit=100")
+    cachedRequest<ApiList<Entry>>("/catalog/categories?limit=100")
       .then((r) => setCategories(r.data))
       .catch((e) => setError(e.message));
   }, []);

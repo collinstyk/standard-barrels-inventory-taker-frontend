@@ -1,5 +1,5 @@
 import { QueryClient } from "@tanstack/react-query";
-import { ApiError, session } from "./api";
+import { ApiError, request, session, subscribeToWrites } from "./api";
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -17,3 +17,25 @@ export const queryClient = new QueryClient({
 });
 // Authenticated query data lives in memory only and is cleared on session changes.
 session.subscribe(() => queryClient.clear());
+// A successful server write makes cached reads stale across the workspace.
+subscribeToWrites(() => void queryClient.invalidateQueries());
+
+function readStaleTime(path: string) {
+  if (path.startsWith("/inventory/")) return 5_000;
+  if (path.startsWith("/sale/") || path.startsWith("/purchase/")) return 30_000;
+  if (path.startsWith("/warehouses/")) return 60_000;
+  return 120_000;
+}
+
+export function cachedRequest<T>(path: string): Promise<T> {
+  return queryClient.fetchQuery({
+    queryKey: ["api-read", path],
+    queryFn: () => request<T>(path),
+    staleTime: readStaleTime(path),
+  });
+}
+
+export async function refreshRequest<T>(path: string): Promise<T> {
+  await queryClient.invalidateQueries({ queryKey: ["api-read", path] });
+  return cachedRequest<T>(path);
+}
