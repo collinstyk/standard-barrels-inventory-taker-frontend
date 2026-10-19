@@ -1,4 +1,5 @@
 import { AppSelect } from "./components/AppSelect";
+import { AmountInput } from "./components/AmountInput";
 import React, { useEffect, useState } from "react";
 import { money, request, type ApiList } from "./api";
 type Entry = { id: string | number; name: string };
@@ -147,12 +148,11 @@ export function ProductCreate({
         </div>
         <label>
           Unit price (₦)
-          <input
-            inputMode="decimal"
-            pattern="[0-9]+(\.[0-9]{1,4})?"
+          <AmountInput
+            pattern="[0-9]{1,3}(,[0-9]{3})*(\.[0-9]{1,4})?"
             required
             value={price}
-            onChange={(e) => setPrice(e.target.value)}
+            onValueChange={setPrice}
           />
         </label>
         {error && <div className="alert error">{error}</div>}
@@ -237,12 +237,11 @@ export function UnitCreate({
         </label>
         <label>
           Price (₦)
-          <input
-            inputMode="decimal"
-            pattern="[0-9]+(\.[0-9]{1,4})?"
+          <AmountInput
+            pattern="[0-9]{1,3}(,[0-9]{3})*(\.[0-9]{1,4})?"
             required
             value={price}
-            onChange={(e) => setPrice(e.target.value)}
+            onValueChange={setPrice}
           />
         </label>
         {error && <div className="alert error">{error}</div>}
@@ -322,6 +321,13 @@ export function EditRecord({
                 onChange={(e) =>
                   setValues({ ...values, [f]: e.target.checked })
                 }
+              />
+            ) : f === "price" ? (
+              <AmountInput
+                required
+                value={String(values[f])}
+                onValueChange={(value) => setValues({ ...values, [f]: value })}
+                pattern="[0-9]{1,3}(,[0-9]{3})*(\.[0-9]{1,4})?"
               />
             ) : (
               <input

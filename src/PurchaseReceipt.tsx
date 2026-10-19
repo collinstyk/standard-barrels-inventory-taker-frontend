@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AppSelect } from "./components/AppSelect";
+import { AmountInput } from "./components/AmountInput";
 import { ApiError, command, newKey, request, type ApiList } from "./api";
 import { decimal, quantity } from "./sales/checkout-model";
 
@@ -283,14 +284,12 @@ export function ReceiptModal({
                       </label>
                       <label>
                         Actual unit cost · ₦
-                        <input
+                        <AmountInput
                           aria-label={`${line.name} actual unit cost`}
-                          type="text"
-                          inputMode="decimal"
                           value={line.cost}
-                          onChange={(event) =>
+                          onValueChange={(value) =>
                             update(line.purchaseItemId, {
-                              cost: event.target.value,
+                              cost: value,
                             })
                           }
                         />

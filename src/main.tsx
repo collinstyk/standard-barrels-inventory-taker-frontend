@@ -1,4 +1,6 @@
 import { AppSelect } from "./components/AppSelect";
+import { AmountInput } from "./components/AmountInput";
+import { statusTone } from "./components/statusTone";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "./query";
 import { SaleComposer } from "./sales/SaleComposer";
@@ -80,19 +82,7 @@ const nav: [Page, React.ReactNode][] = [
 ];
 function status(value: string | undefined) {
   return (
-    <span
-      className={
-        "badge " +
-        (value === "COMPLETED" ||
-        value === "FULLY_DELIVERED" ||
-        value === "FULLY_RECEIVED" ||
-        value === "POSTED"
-          ? "good"
-          : value === "CANCELLED"
-            ? "bad"
-            : "neutral")
-      }
-    >
+    <span className={`badge ${statusTone(value)}`}>
       {value?.replaceAll("_", " ") || "—"}
     </span>
   );
@@ -671,14 +661,18 @@ function SaleView({
               </div>
               <div className="summary">
                 <span>Payment status</span>
-                <strong className="status-large">
+                <strong
+                  className={`status-large status-tone-${statusTone(data.paymentStatus)}`}
+                >
                   {data.paymentStatus.replaceAll("_", " ")}
                 </strong>
                 <small>Paid: {money(data.amountPaid)}</small>
               </div>
               <div className="summary">
                 <span>Delivery status</span>
-                <strong className="status-large">
+                <strong
+                  className={`status-large status-tone-${statusTone(data.deliveryStatus)}`}
+                >
                   {data.deliveryStatus.replaceAll("_", " ")}
                 </strong>
                 <small>Commercial: {data.transactionStatus}</small>
@@ -976,11 +970,10 @@ function CommercialModal({
         </label>
         <label>
           Amount paid (₦)
-          <input
+          <AmountInput
             value={amountPaid}
-            onChange={(e) => setPaid(e.target.value)}
-            inputMode="decimal"
-            pattern="[0-9]+(\.[0-9]{1,4})?"
+            onValueChange={setPaid}
+            pattern="[0-9]{1,3}(,[0-9]{3})*(\.[0-9]{1,4})?"
             required
           />
         </label>
@@ -1105,6 +1098,7 @@ function Purchases({ user }: { user: User }) {
     return (
       <PurchaseCreate
         userId={user.id}
+        canCreateContacts={["ADMIN", "MANAGER"].includes(user.role)}
         close={() => {
           setCreating(false);
           load();
@@ -1163,7 +1157,11 @@ function Purchases({ user }: { user: User }) {
               <strong className="status-large">
                 {detail.transactionStatus}
               </strong>
-              <small>{detail.paymentStatus}</small>
+              <small
+                className={`status-tone-${statusTone(detail.paymentStatus)}`}
+              >
+                {detail.paymentStatus.replaceAll("_", " ")}
+              </small>
             </div>
             <div className="summary">
               <span>Receiving</span>
@@ -1479,21 +1477,20 @@ function PurchaseCommercial({
         </label>
         <label>
           Amount paid (₦)
-          <input
+          <AmountInput
             value={amountPaid}
-            onChange={(e) => {
-              setPaid(e.target.value);
+            onValueChange={(value) => {
+              setPaid(value);
               if (
                 transactionStatus === "COMPLETED" &&
-                decimal(e.target.value) !== null &&
+                decimal(value) !== null &&
                 due !== null &&
                 extra !== null &&
-                decimal(e.target.value)! < due + extra
+                decimal(value)! < due + extra
               )
                 setStatus("PENDING");
             }}
-            inputMode="decimal"
-            pattern="[0-9]+(\.[0-9]{1,4})?"
+            pattern="[0-9]{1,3}(,[0-9]{3})*(\.[0-9]{1,4})?"
             required
           />
         </label>

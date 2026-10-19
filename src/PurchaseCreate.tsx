@@ -1,7 +1,12 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ArrowRight, Plus, RefreshCw, X } from "lucide-react";
 import { AppSelect } from "./components/AppSelect";
+import { AmountInput } from "./components/AmountInput";
+import {
+  TransactionContactCreate,
+  type TransactionContact,
+} from "./components/TransactionContactCreate";
 import { ApiError, command, money, newKey, request, type ApiList } from "./api";
 import { decimal, decimalString, quantity } from "./sales/checkout-model";
 
@@ -98,10 +103,12 @@ function valid(lines: Line[], paid: string): string {
 }
 export function PurchaseCreate({
   userId,
+  canCreateContacts,
   close,
   done,
 }: {
   userId: string;
+  canCreateContacts: boolean;
   close: () => void;
   done: (id: number, receiveNow: boolean) => void;
 }) {
@@ -109,6 +116,8 @@ export function PurchaseCreate({
     readPurchaseAttempt(userId),
   );
   const [supplierId, setSupplierId] = useState(""),
+    [createdSupplier, setCreatedSupplier] = useState<Contact | null>(null),
+    [contactOpen, setContactOpen] = useState(false),
     [productId, setProductId] = useState(""),
     [selectedUnitId, setUnitId] = useState("");
   const [addQuantity, setAddQuantity] = useState("1"),
@@ -117,6 +126,7 @@ export function PurchaseCreate({
   const [review, setReview] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
+  const queryClient = useQueryClient();
   const suppliersQuery = useQuery({
     queryKey: ["purchase-suppliers", userId],
     queryFn: () => allPages<Contact>("/contacts/?type=SUPPLIER"),
@@ -313,6 +323,18 @@ export function PurchaseCreate({
                     onValueChange={setSupplierId}
                     options={[
                       { value: "", label: "Unassigned supplier" },
+                      ...(createdSupplier &&
+                      supplierId === createdSupplier.id &&
+                      !suppliersQuery.data?.some(
+                        (item) => item.id === createdSupplier.id,
+                      )
+                        ? [
+                            {
+                              value: createdSupplier.id,
+                              label: createdSupplier.name,
+                            },
+                          ]
+                        : []),
                       ...(suppliersQuery.data || []).map((item) => ({
                         value: item.id,
                         label: item.name,
@@ -320,6 +342,15 @@ export function PurchaseCreate({
                     ]}
                   />
                 </label>
+                {canCreateContacts && (
+                  <button
+                    type="button"
+                    className="sale-text-button"
+                    onClick={() => setContactOpen(true)}
+                  >
+                    + Add new supplier
+                  </button>
+                )}
                 {suppliersQuery.isError && (
                   <p className="sale-help" role="status">
                     Suppliers could not be loaded. You can continue unassigned.{" "}
@@ -441,13 +472,11 @@ export function PurchaseCreate({
                       </label>
                       <label>
                         Agreed unit cost · ₦
-                        <input
+                        <AmountInput
                           aria-label={`${line.productName} agreed unit cost (${line.unitName})`}
-                          type="text"
-                          inputMode="decimal"
                           value={line.cost}
-                          onChange={(event) =>
-                            update(line.id, { cost: event.target.value })
+                          onValueChange={(value) =>
+                            update(line.id, { cost: value })
                           }
                         />
                       </label>
@@ -507,7 +536,10 @@ export function PurchaseCreate({
                 <span>Supplier</span>
                 <b>
                   {suppliersQuery.data?.find((item) => item.id === supplierId)
-                    ?.name || "Unassigned supplier"}
+                    ?.name ||
+                    (createdSupplier?.id === supplierId
+                      ? createdSupplier.name
+                      : "Unassigned supplier")}
                 </b>
               </div>
               {lines.map((line) => (
@@ -532,11 +564,7 @@ export function PurchaseCreate({
               </div>
               <label className="purchase-paid">
                 Amount already paid · ₦
-                <input
-                  inputMode="decimal"
-                  value={paid}
-                  onChange={(event) => setPaid(event.target.value)}
-                />
+                <AmountInput value={paid} onValueChange={setPaid} />
               </label>
               <div className="sale-info-row">
                 <span>Commercial status</span>
@@ -585,6 +613,30 @@ export function PurchaseCreate({
             </div>
           )}
         </>
+      )}
+      {contactOpen && (
+        <TransactionContactCreate
+          kind="SUPPLIER"
+          close={() => {
+            setContactOpen(false);
+            void suppliersQuery.refetch();
+          }}
+          created={(contact: TransactionContact) => {
+            queryClient.setQueryData<Contact[]>(
+              ["purchase-suppliers", userId],
+              (current) =>
+                current?.some((item) => item.id === contact.id)
+                  ? current
+                  : [...(current || []), contact],
+            );
+            setCreatedSupplier(contact);
+            setSupplierId(contact.id);
+            setContactOpen(false);
+            void queryClient.invalidateQueries({
+              queryKey: ["purchase-suppliers", userId],
+            });
+          }}
+        />
       )}
     </div>
   );

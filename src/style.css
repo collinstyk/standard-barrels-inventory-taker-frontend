@@ -603,6 +603,33 @@ td small {
   background: rgba(217, 155, 40, 0.14);
 }
 
+.badge.partial,
+.status-tone-partial {
+  color: var(--warning);
+}
+
+.badge.partial {
+  background: rgba(217, 155, 40, 0.14);
+}
+
+.badge.unpaid,
+.status-tone-unpaid {
+  color: #c2410c;
+}
+
+.badge.unpaid {
+  background: rgba(194, 65, 12, 0.13);
+}
+
+.status-tone-good {
+  color: var(--primary);
+}
+
+[data-theme="dark"] .badge.unpaid,
+[data-theme="dark"] .status-tone-unpaid {
+  color: #ff785c;
+}
+
 .badge.bad {
   color: var(--error);
   background: rgba(180, 35, 50, 0.1);
@@ -719,6 +746,10 @@ td small {
   border-radius: 16px;
   box-shadow: 0 25px 75px rgba(0, 0, 0, 0.25);
   padding: 22px;
+}
+
+.transaction-contact-modal {
+  width: min(100%, 460px);
 }
 
 .modal-head {
@@ -977,7 +1008,7 @@ td small {
   .sidebar nav button {
     padding: 10px 12px;
   }
-  
+
   .summary {
     padding: 17px;
   }
@@ -1094,9 +1125,7 @@ td small {
   .history-row {
     flex-wrap: wrap;
   }
-
 }
-
 
 @media (max-width: 480px) {
   main {
@@ -1118,7 +1147,7 @@ td small {
   .summary strong {
     font-size: 22px;
   }
-  
+
   .summary small {
     font-size: 10px;
   }
@@ -1217,7 +1246,7 @@ td small {
   .availability-row {
     grid-template-columns: 1fr 1fr;
   }
-  
+
   .availability-row > div:first-child {
     grid-column: 1/-1;
   }

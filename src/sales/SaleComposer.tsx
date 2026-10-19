@@ -24,6 +24,12 @@ import {
   type User,
 } from "../api";
 import { AppSelect } from "../components/AppSelect";
+import { AmountInput } from "../components/AmountInput";
+import { statusTone } from "../components/statusTone";
+import {
+  TransactionContactCreate,
+  type TransactionContact,
+} from "../components/TransactionContactCreate";
 import {
   basketError,
   basketTotal,
@@ -213,18 +219,16 @@ function CheckoutDialog({
             Amount already paid · ₦
           </label>
           <div className="sale-payment-entry">
-            <input
+            <AmountInput
               autoFocus
               id="sale-amount-paid"
-              type="text"
-              inputMode="decimal"
               required
-              pattern="[0-9]+([.][0-9]{1,4})?"
+              pattern="[0-9]{1,3}(,[0-9]{3})*([.][0-9]{1,4})?"
               aria-invalid={basket.amountPaid !== "" && !!error}
               aria-describedby="sale-payment-error"
               value={basket.amountPaid}
               placeholder="0.00"
-              onChange={(event) => setPaid(event.target.value)}
+              onValueChange={setPaid}
             />
             <button
               type="button"
@@ -325,6 +329,7 @@ export function SaleComposer({
   const [basket, setBasket] = useState<Basket>(
     () => readAttempt(user.id)?.basket || readBasket(user.id),
   );
+  const [contactOpen, setContactOpen] = useState(false);
   const queryClient = useQueryClient();
   const buyersQuery = useQuery({
     queryKey: ["sale-buyers", user.id],
@@ -536,14 +541,10 @@ export function SaleComposer({
               : "The remaining goods stay attached to this sale for later handover."}
           </p>
           <div className="sale-result-status">
-            <span
-              className={`badge ${result.paymentStatus === "FULLY_PAID" ? "good" : "neutral"}`}
-            >
+            <span className={`badge ${statusTone(result.paymentStatus)}`}>
               {result.paymentStatus.replaceAll("_", " ")}
             </span>
-            <span
-              className={`badge ${result.deliveryStatus === "FULLY_DELIVERED" ? "good" : "neutral"}`}
-            >
+            <span className={`badge ${statusTone(result.deliveryStatus)}`}>
               {result.deliveryStatus.replaceAll("_", " ")}
             </span>
           </div>
@@ -733,6 +734,15 @@ export function SaleComposer({
                 ]}
               />
             </label>
+            {["ADMIN", "MANAGER"].includes(user.role) && (
+              <button
+                type="button"
+                className="sale-text-button"
+                onClick={() => setContactOpen(true)}
+              >
+                + Add new buyer
+              </button>
+            )}
             <p className="sale-help">
               Leave as “Walk-in customer” for an anonymous sale. No contact is
               created.
@@ -935,13 +945,11 @@ export function SaleComposer({
                   </label>
                   <label className="sale-line-price">
                     <span>Unit price · ₦</span>
-                    <input
+                    <AmountInput
                       aria-label={`${line.productName} unit price (${line.unitName})`}
-                      type="text"
-                      inputMode="decimal"
                       value={line.price}
-                      onChange={(event) =>
-                        updateLine(line.id, { price: event.target.value })
+                      onValueChange={(value) =>
+                        updateLine(line.id, { price: value })
                       }
                     />
                   </label>
@@ -1053,6 +1061,33 @@ export function SaleComposer({
           close={() => setStep(0)}
           review={() => setStep((current) => (current === 1 ? 2 : 1))}
           confirm={confirmSale}
+        />
+      )}
+      {contactOpen && (
+        <TransactionContactCreate
+          kind="BUYER"
+          close={() => {
+            setContactOpen(false);
+            void buyersQuery.refetch();
+          }}
+          created={(contact: TransactionContact) => {
+            queryClient.setQueryData<Contact[]>(
+              ["sale-buyers", user.id],
+              (current) =>
+                current?.some((item) => item.id === contact.id)
+                  ? current
+                  : [...(current || []), contact],
+            );
+            setBasket((current) => ({
+              ...current,
+              buyerId: contact.id,
+              buyerName: contact.name,
+            }));
+            setContactOpen(false);
+            void queryClient.invalidateQueries({
+              queryKey: ["sale-buyers", user.id],
+            });
+          }}
         />
       )}
     </div>
