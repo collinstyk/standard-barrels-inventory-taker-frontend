@@ -38,6 +38,7 @@ import {
   command,
   date,
   money,
+  listData,
   newKey,
   request,
   session,
@@ -420,7 +421,7 @@ function Sales({ user }: { user: User }) {
       const r = await (force ? refreshRequest : cachedRequest)<
         ApiList<SaleList>
       >(path);
-      setRows(r.data);
+      setRows(listData(r, path));
       setPages(r.pagination?.totalPages || 1);
     } catch (e) {
       setError(e);
@@ -1064,7 +1065,7 @@ function Purchases({ user }: { user: User }) {
       const r = await (force ? refreshRequest : cachedRequest)<
         ApiList<Purchase>
       >("/purchase/?limit=50");
-      setRows(r.data);
+      setRows(listData(r, "/purchase/?limit=50"));
     } catch (e) {
       setError(e);
     } finally {
@@ -1937,7 +1938,7 @@ function Directory({ page, user }: { page: Page; user: User }) {
       const r = await (force ? refreshRequest : cachedRequest)<ApiList<Entity>>(
         `${path}${path.includes("?") ? "&" : "?"}limit=100`,
       );
-      setRows(r.data);
+      setRows(listData(r, path));
     } catch (e) {
       setError(e);
     } finally {
@@ -1958,7 +1959,9 @@ function Directory({ page, user }: { page: Page; user: User }) {
       cachedRequest<ApiList<Entity>>(
         `/catalog/products/${selected.id}/units?limit=100`,
       )
-        .then((r) => setChild(r.data))
+        .then((r) =>
+          setChild(listData(r, `/catalog/products/${selected.id}/units`)),
+        )
         .catch((e) => setError(e));
   }, [selected]);
   if (page === "Warehouses" && warehouseId)

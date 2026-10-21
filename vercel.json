@@ -4,10 +4,6 @@
     {
       "source": "/api/:path*",
       "destination": "https://standard-barrels-inventory-taker-backend.onrender.com/api/:path*"
-    },
-    {
-      "source": "/(.*)",
-      "destination": "/index.html"
     }
   ],
   "headers": [

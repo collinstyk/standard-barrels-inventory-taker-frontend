@@ -22,6 +22,14 @@ export class ApiError extends Error {
   }
 }
 
+export function listData<T>(payload: ApiList<T>, path: string): T[] {
+  if (Array.isArray(payload?.data)) return payload.data;
+  throw new ApiError(
+    502,
+    `The server returned an unexpected list response for ${path}. Please retry or contact an administrator.`,
+  );
+}
+
 function responseMessage(payload: unknown, status: number): string {
   if (payload && typeof payload === "object") {
     const body = payload as Record<string, unknown>;
@@ -45,6 +53,13 @@ export function subscribeToWrites(listener: () => void) {
   return () => writeListeners.delete(listener);
 }
 
+function apiUrl(path: string): string {
+  const queryStart = path.indexOf("?");
+  const route = queryStart < 0 ? path : path.slice(0, queryStart);
+  const query = queryStart < 0 ? "" : path.slice(queryStart);
+  return `/api/v1${route.replace(/\/+$/, "")}${query}`;
+}
+
 export async function request<T>(
   path: string,
   options: RequestInit = {},
@@ -56,7 +71,7 @@ export async function request<T>(
   if (token) headers.set("Authorization", `Bearer ${token}`);
   let response: Response;
   try {
-    response = await fetch(`/api/v1${path}`, {
+    response = await fetch(apiUrl(path), {
       ...options,
       headers,
       cache: "no-store",
@@ -65,8 +80,10 @@ export async function request<T>(
     throw new ApiError(0, "Network unavailable. Check the server and retry.");
   }
   let payload: unknown;
+  let parsedJson = false;
   try {
     payload = await response.json();
+    parsedJson = true;
   } catch {
     payload = null;
   }
@@ -74,6 +91,11 @@ export async function request<T>(
     session.set(null);
   if (!response.ok)
     throw new ApiError(response.status, responseMessage(payload, response.status));
+  if (!parsedJson || payload === null || typeof payload !== "object")
+    throw new ApiError(
+      502,
+      `The API returned an empty or non-JSON response for ${path}. Please retry.`,
+    );
   if (options.method && options.method.toUpperCase() !== "GET")
     writeListeners.forEach((listener) => listener());
   return payload as T;

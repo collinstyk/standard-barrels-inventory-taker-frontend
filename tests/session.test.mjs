@@ -118,6 +118,49 @@ test("API error objects never appear as [object Object]", async () => {
     message: "The server is temporarily unavailable. Please retry shortly.",
   });
 });
+
+test("unexpected list responses give an actionable error instead of crashing", async () => {
+  const { listData } = await load();
+  assert.deepEqual(listData({ status: "success", data: [] }, "/sale/"), []);
+  assert.throws(
+    () => listData({ status: "success" }, "/sale/"),
+    { status: 502, message: /unexpected list response for \/sale\// },
+  );
+});
+
+test("successful HTTP responses without JSON are treated as API failures", async () => {
+  const { request } = await load();
+  for (const response of [
+    new Response("<html>Service starting</html>", {
+      status: 200,
+      headers: { "Content-Type": "text/html" },
+    }),
+    new Response(null, { status: 204 }),
+  ]) {
+    globalThis.fetch = async () => response;
+    await assert.rejects(request("/purchase/?limit=50"), {
+      status: 502,
+      message: /empty or non-JSON response for \/purchase\/\?limit=50/,
+    });
+  }
+});
+
+test("API requests omit trailing route slashes before query strings", async () => {
+  const { request } = await load();
+  const urls = [];
+  globalThis.fetch = async (url) => {
+    urls.push(url);
+    return Response.json({ status: "success", data: [] });
+  };
+  await request("/purchase/?limit=50");
+  await request("/contacts/?type=SUPPLIER");
+  await request("/warehouses/");
+  assert.deepEqual(urls, [
+    "/api/v1/purchase?limit=50",
+    "/api/v1/contacts?type=SUPPLIER",
+    "/api/v1/warehouses",
+  ]);
+});
 test("network failures and 403 preserve the session", async () => {
   const { session, request } = await load();
   const jwt = token();
