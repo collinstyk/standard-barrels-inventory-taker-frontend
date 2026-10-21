@@ -1,3 +1,11 @@
+.purchase-product-heading-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+}
+
 .purchase-add-product {
   display: grid;
   grid-template-columns: minmax(150px, 1fr) minmax(150px, 1fr) 105px auto;
@@ -94,6 +102,38 @@
   height: 48px;
   font-size: 20px;
 }
+.purchase-expiry-review {
+  margin-top: 22px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--canvas);
+}
+.purchase-expiry-review h3 {
+  margin: 0 0 5px;
+  font-size: 14px;
+}
+.purchase-expiry-review p {
+  margin: 0 0 10px;
+}
+.purchase-expiry-review label {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(150px, 190px);
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+}
+.purchase-expiry-review input {
+  min-width: 0;
+  height: 40px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+}
 .purchase-paths {
   display: flex;
   justify-content: flex-end;
@@ -189,6 +229,9 @@
   }
   .purchase-paths button {
     justify-content: center;
+  }
+  .purchase-expiry-review label {
+    grid-template-columns: 1fr;
   }
 }
 @media (max-width: 560px) {

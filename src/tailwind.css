@@ -5,6 +5,7 @@
 @layer theme, base, components, utilities;
 @import "tailwindcss/theme.css" layer(theme);
 @import "./components/ui/select.css" layer(components);
+@import "./components/ui/combobox.css" layer(components);
 @import "./style.css" layer(components);
 @import "./sales/sale-composer.css" layer(components);
 @import "./purchase.css" layer(components);

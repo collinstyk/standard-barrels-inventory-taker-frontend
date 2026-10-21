@@ -31,6 +31,7 @@ import {
   Search,
   ChevronRight,
   ShieldAlert,
+  MapPin,
 } from "lucide-react";
 import {
   ApiError,
@@ -1022,8 +1023,8 @@ type Purchase = Entity & {
   amountPaid: string;
   items?: Array<{
     id: number;
-    product: { name: string; baseUnit: string };
-    unit: { name: string };
+    product: { id: string; name: string; baseUnit: string };
+    unit: { id: number; name: string };
     quantityOrdered: number;
     quantityReceived: number;
     agreedUnitCost: string;
@@ -1036,6 +1037,7 @@ type Purchase = Entity & {
       purchaseItemId: number;
       quantityInOrderUnit: number;
       quantityBase: number;
+      expiryDate?: string | null;
       warehouse: { name: string };
     }>;
   }>;
@@ -1046,6 +1048,7 @@ function Purchases({ user }: { user: User }) {
     [error, setError] = useState<unknown>(null),
     [loading, setLoading] = useState(true),
     [receipt, setReceipt] = useState(false),
+    [receiptExpiry, setReceiptExpiry] = useState<Record<string, string>>({}),
     [posting, setPosting] = useState<number | null>(null),
     [postKey, setPostKey] = useState(""),
     [postError, setPostError] = useState(""),
@@ -1122,13 +1125,15 @@ function Purchases({ user }: { user: User }) {
       <PurchaseCreate
         userId={user.id}
         canCreateContacts={["ADMIN", "MANAGER"].includes(user.role)}
+        canCreateProducts={["ADMIN", "MANAGER"].includes(user.role)}
         close={() => {
           setCreating(false);
           load();
         }}
-        done={(id, receiveNow) => {
+        done={(id, receiveNow, expiryByProductUnit) => {
           setCreating(false);
           setReceipt(receiveNow);
+          setReceiptExpiry(expiryByProductUnit);
           void open(id);
         }}
       />
@@ -1157,7 +1162,13 @@ function Purchases({ user }: { user: User }) {
             </div>
             <div className="head-actions">
               {user.role !== "AUDITOR" && (
-                <button className="primary" onClick={() => setReceipt(true)}>
+                <button
+                  className="primary"
+                  onClick={() => {
+                    setReceiptExpiry({});
+                    setReceipt(true);
+                  }}
+                >
                   <Plus size={17} /> Draft receipt
                 </button>
               )}
@@ -1277,6 +1288,9 @@ function Purchases({ user }: { user: User }) {
                               {ordered?.product.baseUnit || "base units"}
                               {" · "}
                               {item.warehouse.name}
+                              {item.expiryDate
+                                ? ` · Expires ${date(item.expiryDate)}`
+                                : ""}
                             </span>
                           </div>
                         );
@@ -1304,9 +1318,14 @@ function Purchases({ user }: { user: User }) {
             <ReceiptModal
               purchase={detail}
               userId={user.id}
-              close={() => setReceipt(false)}
+              expiryByProductUnit={receiptExpiry}
+              close={() => {
+                setReceipt(false);
+                setReceiptExpiry({});
+              }}
               done={(receiptId) => {
                 setReceipt(false);
+                setReceiptExpiry({});
                 void open(Number(detail.id)).then((loaded) => {
                   if (loaded) setPosting(receiptId);
                 });
@@ -1320,7 +1339,7 @@ function Purchases({ user }: { user: User }) {
             >
               <p className="modal-intro">
                 Posting this receipt increases stock. Confirm the received
-                quantities and warehouse are correct.
+                quantities, warehouse and expiry dates are correct.
               </p>
               {detail.receipts
                 ?.find((item) => item.id === posting)
@@ -1340,6 +1359,9 @@ function Purchases({ user }: { user: User }) {
                       <b>
                         {item.quantityInOrderUnit}{" "}
                         {ordered?.unit.name || "units"} · {item.warehouse.name}
+                        {item.expiryDate
+                          ? ` · Expires ${date(item.expiryDate)}`
+                          : " · No expiry"}
                       </b>
                     </div>
                   );
@@ -2213,7 +2235,7 @@ function WarehouseDetail({
                 WAREHOUSE / #{warehouse.data.data.id}
               </div>
               <h1>{warehouse.data.data.name}</h1>
-              <p>{warehouse.data.data.location || "No location recorded"}</p>
+              <p>Warehouse overview</p>
             </div>
             <div className="head-actions">
               <button
@@ -2231,40 +2253,21 @@ function WarehouseDetail({
               )}
             </div>
           </div>
-          <div className="summary-grid warehouse-summary">
-            <div className="summary">
-              <span>Warehouse ID</span>
-              <strong>#{warehouse.data.data.id}</strong>
-            </div>
-            <div className="summary">
-              <span>Location</span>
-              <strong>{warehouse.data.data.location || "—"}</strong>
-            </div>
-            <div className="summary">
-              <span>Inventory batches</span>
-              <strong>{warehouse.data.data.batchCount}</strong>
-            </div>
-          </div>
-          <div className="panel warehouse-details">
-            <div className="panel-head">
-              <h2>Warehouse details</h2>
-            </div>
-            <div className="detail-pairs">
+          <div className="panel warehouse-overview">
+            <div className="warehouse-overview-item">
+              <span className="warehouse-overview-icon"><MapPin size={21} /></span>
               <div>
-                <span>Name</span>
-                <b>{warehouse.data.data.name}</b>
+                <span className="warehouse-overview-label">Location</span>
+                <strong>{warehouse.data.data.location || "No location recorded"}</strong>
+                <p>Where this warehouse is located</p>
               </div>
+            </div>
+            <div className="warehouse-overview-item">
+              <span className="warehouse-overview-icon"><Boxes size={21} /></span>
               <div>
-                <span>Location</span>
-                <b>{warehouse.data.data.location || "—"}</b>
-              </div>
-              <div>
-                <span>ID</span>
-                <b>{warehouse.data.data.id}</b>
-              </div>
-              <div>
-                <span>Inventory batches</span>
-                <b>{warehouse.data.data.batchCount}</b>
+                <span className="warehouse-overview-label">Inventory batches</span>
+                <strong>{warehouse.data.data.batchCount}</strong>
+                <p>Recorded batches in this warehouse</p>
               </div>
             </div>
           </div>

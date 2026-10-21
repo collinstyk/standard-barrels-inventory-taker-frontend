@@ -1,9 +1,23 @@
-import { AppSelect } from "./components/AppSelect";
 import { AmountInput } from "./components/AmountInput";
-import React, { useEffect, useState } from "react";
+import { CategoryCombobox } from "./components/CategoryCombobox";
+import React, { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { cachedRequest } from "./query";
-import { money, request, type ApiList } from "./api";
+import { ApiError, money, request, type ApiList } from "./api";
 type Entry = { id: string | number; name: string };
+async function loadCategories(): Promise<Entry[]> {
+  const categories: Entry[] = [];
+  let page = 1;
+  while (true) {
+    const response = await cachedRequest<ApiList<Entry>>(
+      `/catalog/categories?limit=100&page=${page}`,
+    );
+    categories.push(...response.data);
+    if (!response.pagination || page >= response.pagination.totalPages)
+      return categories;
+    page++;
+  }
+}
 function Frame({
   title,
   close,
@@ -35,41 +49,62 @@ export function ProductCreate({
   done,
 }: {
   close: () => void;
-  done: () => void;
+  done: (product: { id: string; name: string }) => void;
 }) {
-  const [categories, setCategories] = useState<Entry[]>([]),
-    [name, setName] = useState(""),
+  const [name, setName] = useState(""),
     [baseUnit, setBase] = useState(""),
     [categoryId, setCategory] = useState(""),
+    [newCategoryName, setNewCategoryName] = useState(""),
     [reorderPoint, setReorder] = useState("0"),
     [unitName, setUnitName] = useState(""),
     [sku, setSku] = useState(""),
     [price, setPrice] = useState("0"),
     [error, setError] = useState(""),
-    [busy, setBusy] = useState(false);
-  useEffect(() => {
-    cachedRequest<ApiList<Entry>>("/catalog/categories?limit=100")
-      .then((r) => setCategories(r.data))
-      .catch((e) => setError(e.message));
-  }, []);
+    [busy, setBusy] = useState(false),
+    [uncertain, setUncertain] = useState(false);
+  const categoriesQuery = useQuery({
+    queryKey: ["product-create-categories"],
+    queryFn: loadCategories,
+  });
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (busy || uncertain) return;
+    if (!categoryId && !newCategoryName) {
+      setError("Choose an existing category or create a new one.");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
-      await request("/catalog/products", {
-        method: "POST",
-        body: JSON.stringify({
-          name,
-          baseUnit,
-          categoryId,
-          reorderPoint: Number(reorderPoint),
-          units: [{ name: unitName, multiplier: 1, price, sku }],
-        }),
-      });
-      done();
+      const response = await request<{ data: { id: string; name: string } }>(
+        "/catalog/products",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            name,
+            baseUnit,
+            ...(categoryId ? { categoryId } : { newCategoryName }),
+            reorderPoint: Number(reorderPoint),
+            units: [{ name: unitName, multiplier: 1, price, sku }],
+          }),
+        },
+      );
+      if (!response.data?.id || !response.data?.name) {
+        setUncertain(true);
+        throw new Error(
+          "Product saved, but the server did not return its details. Close this form and refresh the product list before trying again.",
+        );
+      }
+      done(response.data);
     } catch (e) {
-      setError((e as Error).message);
+      if ((e as ApiError).status === 0) {
+        setUncertain(true);
+        setError(
+          "The connection failed after submission. This product may already exist. Close this form and refresh the product list before trying again.",
+        );
+      } else {
+        setError((e as Error).message);
+      }
     } finally {
       setBusy(false);
     }
@@ -100,21 +135,30 @@ export function ProductCreate({
               placeholder="bottle, piece, litre"
             />
           </label>
-          <label>
-            Category
-            <AppSelect
-              required
-              value={categoryId}
-              onValueChange={(value) => setCategory(value)}
-              placeholder="Choose category"
-              options={[
-                ...categories.map((c) => ({
-                  value: String(c.id),
-                  label: <>{c.name}</>,
-                })),
-              ]}
+          <div>
+            <CategoryCombobox
+              categories={categoriesQuery.data || []}
+              categoryId={categoryId}
+              newCategoryName={newCategoryName}
+              onExisting={(id) => {
+                setCategory(id);
+                setNewCategoryName("");
+                setError("");
+              }}
+              onNew={(categoryName) => {
+                setCategory("");
+                setNewCategoryName(categoryName);
+                setError("");
+              }}
+              disabled={busy || uncertain || categoriesQuery.isPending || categoriesQuery.isError}
             />
-          </label>
+            {categoriesQuery.isPending && <small className="category-load-state">Loading categories…</small>}
+            {categoriesQuery.isError && (
+              <div className="category-load-state" role="alert">
+                Categories could not be loaded. <button type="button" className="sale-text-button" onClick={() => categoriesQuery.refetch()}>Retry</button>
+              </div>
+            )}
+          </div>
         </div>
         <label>
           Reorder point (base units)
@@ -161,7 +205,7 @@ export function ProductCreate({
           <button type="button" className="subtle" onClick={close}>
             Cancel
           </button>
-          <button className="primary" disabled={busy}>
+          <button className="primary" disabled={busy || uncertain || categoriesQuery.isPending || categoriesQuery.isError}>
             Create product
           </button>
         </div>

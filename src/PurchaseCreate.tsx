@@ -4,6 +4,7 @@ import { cachedRequest } from "./query";
 import { ArrowLeft, ArrowRight, Plus, RefreshCw, X } from "lucide-react";
 import { AppSelect } from "./components/AppSelect";
 import { AmountInput } from "./components/AmountInput";
+import { ProductCreate } from "./MasterForms";
 import {
   TransactionContactCreate,
   type TransactionContact,
@@ -22,6 +23,7 @@ type Line = {
   unitName: string;
   quantity: string;
   cost: string;
+  expiryDate: string;
 };
 type PurchaseBody = {
   supplierId: string | null;
@@ -41,6 +43,7 @@ type Attempt = {
   key: string;
   body: PurchaseBody;
   receiveNow: boolean;
+  receiptExpiryByProductUnit?: Record<string, string>;
 };
 const attemptKey = (userId: string) => `sb-purchase-create-v1:${userId}`;
 export function readPurchaseAttempt(userId: string): Attempt | null {
@@ -105,13 +108,19 @@ function valid(lines: Line[], paid: string): string {
 export function PurchaseCreate({
   userId,
   canCreateContacts,
+  canCreateProducts,
   close,
   done,
 }: {
   userId: string;
   canCreateContacts: boolean;
+  canCreateProducts: boolean;
   close: () => void;
-  done: (id: number, receiveNow: boolean) => void;
+  done: (
+    id: number,
+    receiveNow: boolean,
+    receiptExpiryByProductUnit: Record<string, string>,
+  ) => void;
 }) {
   const [attempt, setAttempt] = useState<Attempt | null>(() =>
     readPurchaseAttempt(userId),
@@ -119,6 +128,7 @@ export function PurchaseCreate({
   const [supplierId, setSupplierId] = useState(""),
     [createdSupplier, setCreatedSupplier] = useState<Contact | null>(null),
     [contactOpen, setContactOpen] = useState(false),
+    [productOpen, setProductOpen] = useState(false),
     [productId, setProductId] = useState(""),
     [selectedUnitId, setUnitId] = useState("");
   const [addQuantity, setAddQuantity] = useState("1"),
@@ -176,6 +186,7 @@ export function PurchaseCreate({
         unitName: unit.name,
         quantity: addQuantity,
         cost: unit.price,
+        expiryDate: "",
       },
     ]);
     setProductId("");
@@ -215,6 +226,16 @@ export function PurchaseCreate({
           key: newKey(),
           body: makeBody(),
           receiveNow,
+          receiptExpiryByProductUnit: receiveNow
+            ? Object.fromEntries(
+                lines
+                  .filter((line) => line.expiryDate)
+                  .map((line) => [
+                    `${line.productId}:${line.unitId}`,
+                    line.expiryDate,
+                  ]),
+              )
+            : {},
         };
         sessionStorage.setItem(attemptKey(userId), JSON.stringify(current));
         setAttempt(current);
@@ -238,7 +259,7 @@ export function PurchaseCreate({
         );
       sessionStorage.removeItem(attemptKey(userId));
       setAttempt(null);
-      done(id, current.receiveNow);
+      done(id, current.receiveNow, current.receiptExpiryByProductUnit || {});
     } catch (e) {
       const failure = e as ApiError;
       setError(failure.message);
@@ -374,10 +395,21 @@ export function PurchaseCreate({
               <div className="panel sale-basket-panel">
                 <div className="panel-head">
                   <h2>Products in this purchase</h2>
-                  <span className="sale-help">
-                    {lines.length} product{" "}
-                    {lines.length === 1 ? "line" : "lines"}
-                  </span>
+                  <div className="purchase-product-heading-actions">
+                    <span className="sale-help">
+                      {lines.length} product{" "}
+                      {lines.length === 1 ? "line" : "lines"}
+                    </span>
+                    {canCreateProducts && (
+                      <button
+                        type="button"
+                        className="sale-text-button"
+                        onClick={() => setProductOpen(true)}
+                      >
+                        <Plus size={16} /> New product
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div className="purchase-add-product">
                   <label>
@@ -578,6 +610,29 @@ export function PurchaseCreate({
                 Receiving is tracked separately. Payment does not add stock. The
                 server confirms final totals and status.
               </p>
+              <div className="purchase-expiry-review">
+                <h3>Receiving now? Add expiry dates</h3>
+                <p className="sale-help">
+                  Optional. These dates carry into the goods receipt and are
+                  recorded only when that receipt is posted. They are ignored if
+                  you choose to receive later.
+                </p>
+                {lines.map((line) => (
+                  <label key={line.id}>
+                    <span>
+                      {line.productName} · {line.unitName}
+                    </span>
+                    <input
+                      aria-label={`${line.productName} expiry date for immediate receipt`}
+                      type="date"
+                      value={line.expiryDate}
+                      onChange={(event) =>
+                        update(line.id, { expiryDate: event.target.value })
+                      }
+                    />
+                  </label>
+                ))}
+              </div>
               {validation && (
                 <div className="alert error" role="alert">
                   {validation}
@@ -638,6 +693,29 @@ export function PurchaseCreate({
             setContactOpen(false);
             void queryClient.invalidateQueries({
               queryKey: ["purchase-suppliers", userId],
+            });
+          }}
+        />
+      )}
+      {productOpen && (
+        <ProductCreate
+          close={() => {
+            setProductOpen(false);
+            void productsQuery.refetch();
+          }}
+          done={(product) => {
+            queryClient.setQueryData<Product[]>(
+              ["purchase-products", userId],
+              (current) =>
+                current?.some((item) => item.id === product.id)
+                  ? current
+                  : [...(current || []), product],
+            );
+            setProductId(product.id);
+            setUnitId("");
+            setProductOpen(false);
+            void queryClient.invalidateQueries({
+              queryKey: ["purchase-products", userId],
             });
           }}
         />

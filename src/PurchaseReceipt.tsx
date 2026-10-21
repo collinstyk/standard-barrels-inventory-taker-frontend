@@ -8,8 +8,8 @@ import { decimal, quantity } from "./sales/checkout-model";
 
 type PurchaseItem = {
   id: number;
-  product: { name: string };
-  unit: { name: string };
+  product: { id: string; name: string };
+  unit: { id: number; name: string };
   quantityOrdered: number;
   quantityReceived: number;
   agreedUnitCost: string;
@@ -64,7 +64,10 @@ async function warehouses(): Promise<Warehouse[]> {
     page++;
   }
 }
-function initialLines(purchase: Purchase): Line[] {
+function initialLines(
+  purchase: Purchase,
+  expiryByProductUnit: Record<string, string>,
+): Line[] {
   return (purchase.items || [])
     .filter((item) => item.quantityOrdered > item.quantityReceived)
     .map((item) => ({
@@ -75,22 +78,27 @@ function initialLines(purchase: Purchase): Line[] {
       quantity: "0",
       warehouseId: "",
       cost: item.agreedUnitCost,
-      expiryDate: "",
+      expiryDate:
+        expiryByProductUnit[`${item.product.id}:${item.unit.id}`] || "",
     }));
 }
 export function ReceiptModal({
   purchase,
   userId,
+  expiryByProductUnit = {},
   close,
   done,
 }: {
   purchase: Purchase;
   userId: string;
+  expiryByProductUnit?: Record<string, string>;
   close: () => void;
   done: (receiptId: number) => void;
 }) {
   const key = storageKey(userId, purchase.id);
-  const [lines, setLines] = useState<Line[]>(() => initialLines(purchase));
+  const [lines, setLines] = useState<Line[]>(() =>
+    initialLines(purchase, expiryByProductUnit),
+  );
   const [attempt, setAttempt] = useState<Attempt | null>(() =>
     readAttempt(key),
   );
