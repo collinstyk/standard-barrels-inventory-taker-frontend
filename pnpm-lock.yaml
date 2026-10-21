@@ -32,7 +32,10 @@ importers:
     devDependencies:
       '@tailwindcss/vite':
         specifier: ^4.3.3
-        version: 4.3.3(vite@7.1.0(jiti@2.7.0)(lightningcss@1.32.0))
+        version: 4.3.3(vite@7.1.0(@types/node@26.6.5)(jiti@2.7.0)(lightningcss@1.32.0))
+      '@types/node':
+        specifier: ^26.6.5
+        version: 26.6.5
       '@types/react':
         specifier: 19.1.0
         version: 19.1.0
@@ -50,7 +53,7 @@ importers:
         version: 5.8.3
       vite:
         specifier: 7.1.0
-        version: 7.1.0(jiti@2.7.0)(lightningcss@1.32.0)
+        version: 7.1.0(@types/node@26.6.5)(jiti@2.7.0)(lightningcss@1.32.0)
 
 packages:
 
@@ -921,6 +924,9 @@ packages:
   '@types/estree@1.0.9':
     resolution: {integrity: sha512-GhdPgy1el4/ImP05X05Uw4cw2/M93BCUmnEvWZNStlCzEKME4Fkk+YpoA5OiHNQmoS7Cafb8Xa3Pya8m1Qrzeg==}
 
+  '@types/node@26.6.5':
+    resolution: {integrity: sha512-uMzsv9stDdofIZBx4UGh4Z9ZgXnGC9seRDscilBcTHAeOFk67MZg/k9bWVfO+bk4qZmG+l52hRnLwUiH2LnJTg==}
+
   '@types/react-dom@19.1.0':
     resolution: {integrity: sha512-21E2zejNNRtjG4hKIyJz4aWswGEcNFTgttA0bZIRGjj1HA/tbSUxIJnIcYbn98pwJck0cS1bsQhn6eaKqbcFWw==}
     peerDependencies:
@@ -1155,6 +1161,9 @@ packages:
     resolution: {integrity: sha512-p1diW6TqL9L07nNxvRMM7hMMw4c5XOo/1ibL4aAIGmSAt9slTE1Xgw5KWuof2uTOvCg9BY7ZRi+GaF+7sfgPeQ==}
     engines: {node: '>=14.17'}
     hasBin: true
+
+  undici-types@8.9.0:
+    resolution: {integrity: sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg==}
 
   use-callback-ref@1.3.3:
     resolution: {integrity: sha512-jQL3lRnocaFtu3V00JToYz/4QkNWswxijDaCVNZRiRTO3HQDLsdu1ZtmIUvV4yPp+rvWm5j0y0TG/S61cuijTg==}
@@ -1863,12 +1872,12 @@ snapshots:
       '@tailwindcss/oxide-win32-arm64-msvc': 4.3.3
       '@tailwindcss/oxide-win32-x64-msvc': 4.3.3
 
-  '@tailwindcss/vite@4.3.3(vite@7.1.0(jiti@2.7.0)(lightningcss@1.32.0))':
+  '@tailwindcss/vite@4.3.3(vite@7.1.0(@types/node@26.6.5)(jiti@2.7.0)(lightningcss@1.32.0))':
     dependencies:
       '@tailwindcss/node': 4.3.3
       '@tailwindcss/oxide': 4.3.3
       tailwindcss: 4.3.3
-      vite: 7.1.0(jiti@2.7.0)(lightningcss@1.32.0)
+      vite: 7.1.0(@types/node@26.6.5)(jiti@2.7.0)(lightningcss@1.32.0)
 
   '@tanstack/query-core@5.104.3': {}
 
@@ -1878,6 +1887,10 @@ snapshots:
       react: 19.1.0
 
   '@types/estree@1.0.9': {}
+
+  '@types/node@26.6.5':
+    dependencies:
+      undici-types: 8.9.0
 
   '@types/react-dom@19.1.0(@types/react@19.1.0)':
     dependencies:
@@ -2110,6 +2123,8 @@ snapshots:
 
   typescript@5.8.3: {}
 
+  undici-types@8.9.0: {}
+
   use-callback-ref@1.3.3(@types/react@19.1.0)(react@19.1.0):
     dependencies:
       react: 19.1.0
@@ -2125,7 +2140,7 @@ snapshots:
     optionalDependencies:
       '@types/react': 19.1.0
 
-  vite@7.1.0(jiti@2.7.0)(lightningcss@1.32.0):
+  vite@7.1.0(@types/node@26.6.5)(jiti@2.7.0)(lightningcss@1.32.0):
     dependencies:
       esbuild: 0.25.12
       fdir: 6.5.0(picomatch@4.0.7)
@@ -2134,6 +2149,7 @@ snapshots:
       rollup: 4.63.3
       tinyglobby: 0.2.17
     optionalDependencies:
+      '@types/node': 26.6.5
       fsevents: 2.3.3
       jiti: 2.7.0
       lightningcss: 1.32.0
