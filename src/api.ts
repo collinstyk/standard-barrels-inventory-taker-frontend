@@ -22,6 +22,23 @@ export class ApiError extends Error {
   }
 }
 
+function responseMessage(payload: unknown, status: number): string {
+  if (payload && typeof payload === "object") {
+    const body = payload as Record<string, unknown>;
+    for (const candidate of [body.message, body.error]) {
+      if (typeof candidate === "string" && candidate.trim()) return candidate;
+      if (candidate && typeof candidate === "object") {
+        const nested = (candidate as Record<string, unknown>).message;
+        if (typeof nested === "string" && nested.trim()) return nested;
+      }
+    }
+  }
+  if (status === 404) return "The API endpoint was not found. Check the deployment configuration.";
+  if (status === 502 || status === 503 || status === 504)
+    return "The server is temporarily unavailable. Please retry shortly.";
+  return `Request failed (${status}). Please retry.`;
+}
+
 const writeListeners = new Set<() => void>();
 export function subscribeToWrites(listener: () => void) {
   writeListeners.add(listener);
@@ -47,21 +64,16 @@ export async function request<T>(
   } catch {
     throw new ApiError(0, "Network unavailable. Check the server and retry.");
   }
-  let payload: any;
+  let payload: unknown;
   try {
     payload = await response.json();
   } catch {
-    payload = {};
+    payload = null;
   }
   if (response.status === 401 && token && session.get() === token)
     session.set(null);
   if (!response.ok)
-    throw new ApiError(
-      response.status,
-      payload.message ||
-        payload.error ||
-        `Request failed (${response.status}).`,
-    );
+    throw new ApiError(response.status, responseMessage(payload, response.status));
   if (options.method && options.method.toUpperCase() !== "GET")
     writeListeners.forEach((listener) => listener());
   return payload as T;

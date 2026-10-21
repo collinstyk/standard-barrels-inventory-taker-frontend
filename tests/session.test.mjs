@@ -96,6 +96,28 @@ test("authenticated 401 clears saved login and notifies the app", async () => {
   assert.equal(notified, true);
   unsubscribe();
 });
+
+test("API error objects never appear as [object Object]", async () => {
+  const { request } = await load();
+  globalThis.fetch = async (url) => {
+    assert.equal(url, "/api/v1/auth/login");
+    return Response.json(
+      { error: { code: "NOT_FOUND", message: "API route unavailable" } },
+      { status: 404 },
+    );
+  };
+  await assert.rejects(request("/auth/login"), {
+    status: 404,
+    message: "API route unavailable",
+  });
+
+  globalThis.fetch = async () =>
+    Response.json({ message: { code: "UPSTREAM_ERROR" } }, { status: 502 });
+  await assert.rejects(request("/auth/login"), {
+    status: 502,
+    message: "The server is temporarily unavailable. Please retry shortly.",
+  });
+});
 test("network failures and 403 preserve the session", async () => {
   const { session, request } = await load();
   const jwt = token();

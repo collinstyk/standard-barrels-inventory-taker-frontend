@@ -2,6 +2,8 @@
 
 React, TypeScript and Vite PWA connected to the supplied Express backend. Start the backend on port 5000, then run `pnpm install` and `pnpm dev`. The frontend runs on port 3000; set `VITE_API_PROXY_TARGET` if the backend uses another address.
 
+For the Vercel deployment, `vercel.json` forwards `/api/*` to the Render backend and disables rewrite caching for API responses. The app continues to call its own origin, so browser CORS is not required. Set the Vercel framework preset to Vite, build command to `pnpm build`, and output directory to `dist`, then redeploy after changing this file. `VITE_API_PROXY_TARGET` affects only local development. If the Render service URL changes, update the destination in `vercel.json` and redeploy. Verify `GET /api/v1/auth/login` through the frontend URL returns the backend's JSON 404 response, then sign in with a valid account.
+
 Tailwind CSS is configured through the official Vite plugin and `src/tailwind.css`. Use standard classes such as `flex`, `p-6`, `bg-primary`, and `dark:bg-canvas`. Existing styles live in the components layer, so explicit utilities take precedence. Preflight is omitted to preserve the design; the palette and `data-theme` dark mode are retained. Frontend source and `index.html` are scanned. The service worker runs in production only and never caches Vite source modules.
 
 ## Backend contract used
