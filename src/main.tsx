@@ -122,10 +122,12 @@ function App() {
       warehouseIdFromHash() ? "Warehouses" : "Sales",
     ),
     [mobile, setMobile] = useState(false);
+    
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem("sb-theme", theme);
   }, [theme]);
+
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
     if (import.meta.env.PROD) {
@@ -162,7 +164,9 @@ function App() {
           .catch(() => {});
     }
   }, []);
+
   useEffect(() => session.subscribe(() => setUser(session.user())), []);
+  
   useEffect(() => {
     const syncWarehouseRoute = () => {
       if (warehouseIdFromHash()) setPage("Warehouses");
@@ -170,6 +174,7 @@ function App() {
     window.addEventListener("hashchange", syncWarehouseRoute);
     return () => window.removeEventListener("hashchange", syncWarehouseRoute);
   }, []);
+
   useEffect(() => {
     if (!session.get()) {
       setRestoring(false);
@@ -192,6 +197,7 @@ function App() {
       active = false;
     };
   }, [restoreAttempt]);
+
   if (restoring || (user && restoreError))
     return (
       <div className="login-wrap">
@@ -202,7 +208,7 @@ function App() {
           {restoring ? (
             <p role="status">Checking your saved login with the server.</p>
           ) : (
-            <>
+            <div className="space-x-4">
               <p role="alert">{(restoreError as Error).message}</p>
               <button
                 className="primary"
@@ -219,7 +225,7 @@ function App() {
               >
                 Sign out
               </button>
-            </>
+            </div>
           )}
         </div>
       </div>
@@ -2258,17 +2264,25 @@ function WarehouseDetail({
           </div>
           <div className="panel warehouse-overview">
             <div className="warehouse-overview-item">
-              <span className="warehouse-overview-icon"><MapPin size={21} /></span>
+              <span className="warehouse-overview-icon">
+                <MapPin size={21} />
+              </span>
               <div>
                 <span className="warehouse-overview-label">Location</span>
-                <strong>{warehouse.data.data.location || "No location recorded"}</strong>
+                <strong>
+                  {warehouse.data.data.location || "No location recorded"}
+                </strong>
                 <p>Where this warehouse is located</p>
               </div>
             </div>
             <div className="warehouse-overview-item">
-              <span className="warehouse-overview-icon"><Boxes size={21} /></span>
+              <span className="warehouse-overview-icon">
+                <Boxes size={21} />
+              </span>
               <div>
-                <span className="warehouse-overview-label">Inventory batches</span>
+                <span className="warehouse-overview-label">
+                  Inventory batches
+                </span>
                 <strong>{warehouse.data.data.batchCount}</strong>
                 <p>Recorded batches in this warehouse</p>
               </div>
