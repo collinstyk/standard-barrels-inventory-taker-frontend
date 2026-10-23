@@ -53,6 +53,7 @@ import { CustomerReturns } from "./CustomerReturns";
 import { ProductCreate, UnitCreate, EditRecord } from "./MasterForms";
 import { SupplierReturns } from "./SupplierReturns";
 import { InviteStaff, AcceptInvite } from "./Invitations";
+import { OpeningStock } from "./OpeningStock";
 type Page =
   | "Sales"
   | "Purchases"
@@ -1564,6 +1565,7 @@ function PurchaseCommercial({
   );
 }
 function Inventory({ user }: { user: User }) {
+  const [opening, setOpening] = useState(false);
   const [tab, setTab] = useState<
       "availability" | "low-stock" | "expiring-soon"
     >("low-stock"),
@@ -1624,6 +1626,7 @@ function Inventory({ user }: { user: User }) {
       setLoading(false);
     }
   }
+  if (opening) return <OpeningStock userId={user.id} close={() => { setOpening(false); load(true); }} />;
   return (
     <>
       <div className="page-head">
@@ -1633,9 +1636,10 @@ function Inventory({ user }: { user: User }) {
           <p>Live availability, low stock and upcoming expiry.</p>
         </div>
         {["ADMIN", "MANAGER"].includes(user.role) && (
-          <button className="primary" onClick={() => setAdjusting(true)}>
-            <Plus size={17} /> Physical adjustment
-          </button>
+          <div className="head-actions">
+            <button className="subtle" onClick={() => setAdjusting(true)}><Plus size={17} /> Physical adjustment</button>
+            <button className="primary" onClick={() => setOpening(true)}><Plus size={17} /> Opening stock</button>
+          </div>
         )}
       </div>
       <div className="tabs">

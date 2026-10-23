@@ -1,0 +1,606 @@
+diff --git a/controllers/inventory.ts b/controllers/inventory.ts
+index caecd04..490368c 100644
+--- a/controllers/inventory.ts
++++ b/controllers/inventory.ts
+@@ -5,8 +5,8 @@ import AppError from "../utils/appError";
+ import { StockAdjustmentBody, StockTransferBody } from "../types/inventory";
+ import { getAuthoritativeExpiringSoon, getAuthoritativeLowStock, isInventoryV2Enabled, getWarehouseAvailability } from "../services/inventory";
+ import { availabilityQuerySchema, expiringSoonQuerySchema, lowStockQuerySchema } from "../schemas/inventoryV2";
+-import { physicalCountAdjustmentSchema } from "../schemas/inventoryV2";
+-import { adjustInventoryBatch } from "../services/inventory";
++import { openingStockSchema, physicalCountAdjustmentSchema } from "../schemas/inventoryV2";
++import { adjustInventoryBatch, recordOpeningStock } from "../services/inventory";
+ import { inventoryHttpError } from "../utils/inventoryHttpError";
+ 
+ export const getInventoryAvailability = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+@@ -27,6 +27,18 @@ export const createPhysicalCountAdjustment = catchAsync(async(req:Request,res:Re
+   try{res.status(200).json({status:"success",data:await adjustInventoryBatch(prisma,parsed.data,req.user!.id,req.idempotencyKey!)});}catch(error){next(inventoryHttpError(error));}
+ });
+ 
++export const createOpeningStock = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
++  if (!isInventoryV2Enabled()) return next(new AppError("Opening stock is unavailable while Inventory V2 is disabled.", 503));
++  const parsed = openingStockSchema.safeParse(req.body);
++  if (!parsed.success) return next(new AppError(`Validation Failed: ${parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join(" | ")}`, 400));
++  try {
++    const data = await recordOpeningStock(prisma, parsed.data, req.user!.id, req.idempotencyKey!);
++    res.status(data.replayed ? 200 : 201).json({ status: "success", data });
++  } catch (error) {
++    next(inventoryHttpError(error));
++  }
++});
++
+ export const adjustStock = catchAsync(
+   async (req: Request, res: Response, next: NextFunction) => {
+     const {
+diff --git a/docs/opening-stock.md b/docs/opening-stock.md
+new file mode 100644
+index 0000000..408174c
+--- /dev/null
++++ b/docs/opening-stock.md
+@@ -0,0 +1,19 @@
++# Opening stock (Inventory V2)
++
++`POST /api/v1/inventory/opening-stock` records stock already on hand when a product and warehouse are first brought into Inventory V2. It is an ADMIN/MANAGER command, requires `INVENTORY_V2_ENABLED=true` and a fresh `Idempotency-Key`, and does not create a purchase, receipt, supplier balance, or payment. STAFF and AUDITOR are denied.
++
++```json
++{
++  "notes": "Counted before go-live",
++  "lines": [
++    { "productId": "<UUID>", "unitId": 1, "warehouseId": 1, "quantityInUnit": 12, "expiryDate": "2027-12-31" },
++    { "productId": "<UUID>", "unitId": 2, "warehouseId": 2, "quantityInUnit": 4, "expiryDate": null }
++  ]
++}
++```
++
++The strict body requires 1–100 lines. Quantity is a positive integer in the selected ProductUnit; the server applies that unit's multiplier and returns both the entered and base-unit quantities. `expiryDate` is optional, in `YYYY-MM-DD` format, and cannot be before the configured business date. All opening stock is sellable. A product/warehouse may have several opening lines with different expiry dates, but no duplicate product/warehouse/expiry line. The server refuses opening stock for a product/warehouse that already has an InventoryBatch or legacy StockLevel, and refuses a product whose sellable cache does not reconcile with its existing batches. Use physical-count adjustments for later corrections to existing batches.
++
++The whole request is one serializable transaction. It creates an `OPENING_STOCK` posting, one new batch and positive movement per line, and updates each product's sellable cache. The response has `status: "success"` and `data` containing posting ID/status/time, actor, `replayed`, notes, and each line's batch and movement IDs, ProductUnit multiplier, entered quantity, base quantity, warehouse, expiry, and resulting product cache. First success is HTTP 201; an exact replay is HTTP 200 with `replayed: true`. Reusing a key with a different payload or command returns 409. No automatic offline replay is intended.
++
++Apply the included migration before enabling this route, then run `pnpm exec prisma generate`, `pnpm typecheck`, and tests. The migration adds `OPENING_STOCK` to the posting and movement enums; it does not alter existing rows.
+diff --git a/prisma/migrations/20261022090000_add_opening_stock_posting_kind/migration.sql b/prisma/migrations/20261022090000_add_opening_stock_posting_kind/migration.sql
+new file mode 100644
+index 0000000..2badc68
+--- /dev/null
++++ b/prisma/migrations/20261022090000_add_opening_stock_posting_kind/migration.sql
+@@ -0,0 +1,2 @@
++ALTER TYPE "PostingKind" ADD VALUE 'OPENING_STOCK';
++ALTER TYPE "StockMovementType" ADD VALUE 'OPENING_STOCK';
+diff --git a/prisma/schema.prisma b/prisma/schema.prisma
+index bd93eb2..b2deb0b 100644
+--- a/prisma/schema.prisma
++++ b/prisma/schema.prisma
+@@ -596,6 +596,7 @@ enum PostingKind {
+   ADJUSTMENT
+   REVERSAL
+   MIGRATION_OPENING_BALANCE
++  OPENING_STOCK
+   RETURN_INSPECTION_RECLASSIFICATION
+ }
+ 
+@@ -620,6 +621,7 @@ enum StockMovementType {
+   RETURN_INSPECTION_RECLASSIFICATION
+   REVERSAL
+   MIGRATION_OPENING_BALANCE
++  OPENING_STOCK
+ }
+ 
+ enum ReceiptStatus {
+diff --git a/routes/inventory.ts b/routes/inventory.ts
+index bf255e2..793dfc4 100644
+--- a/routes/inventory.ts
++++ b/routes/inventory.ts
+@@ -6,6 +6,7 @@ import {
+   getExpiringSoonAlerts,
+   getInventoryAvailability,
+   createPhysicalCountAdjustment,
++  createOpeningStock,
+ } from "../controllers/inventory";
+ import { protect, restrictTo } from "../middlewares/auth";
+ import { UserRole } from "../generated/prisma/enums";
+@@ -16,6 +17,7 @@ const router = Router();
+ 
+ router.route("/availability").get(protect, restrictTo(UserRole.ADMIN, UserRole.MANAGER, UserRole.STAFF, UserRole.AUDITOR), getInventoryAvailability);
+ router.post("/adjustments",protect,restrictTo(UserRole.ADMIN,UserRole.MANAGER),requireIdempotencyKey,createPhysicalCountAdjustment);
++router.post("/opening-stock", protect, restrictTo(UserRole.ADMIN, UserRole.MANAGER), requireIdempotencyKey, createOpeningStock);
+ 
+ router
+   .route("/adjust")
+diff --git a/schemas/inventoryV2.ts b/schemas/inventoryV2.ts
+index fde2e42..c3619fd 100644
+--- a/schemas/inventoryV2.ts
++++ b/schemas/inventoryV2.ts
+@@ -147,3 +147,25 @@ export const physicalCountAdjustmentSchema = z.object({
+   reason: z.enum(["PHYSICAL_COUNT", "LOSS", "FOUND_STOCK", "DATA_CORRECTION"]),
+   notes: z.string().trim().min(1).max(1_000).optional(),
+ }).strict();
++
++export const openingStockSchema = z.object({
++  notes: z.string().trim().min(1).max(1_000).optional(),
++  lines: z.array(z.object({
++    productId: z.uuid(),
++    unitId: positiveInt,
++    warehouseId: positiveInt,
++    quantityInUnit: positiveInt,
++    expiryDate: dateOnlySchema.nullable().optional(),
++  }).strict()).min(1).max(100).superRefine((lines, context) => {
++    const seen = new Set<string>();
++    lines.forEach((line, index) => {
++      const key = `${line.productId}:${line.warehouseId}:${line.expiryDate ?? "none"}`;
++      if (seen.has(key)) context.addIssue({
++        code: "custom",
++        path: [index],
++        message: "Duplicate product, warehouse, and expiry line.",
++      });
++      seen.add(key);
++    });
++  }),
++}).strict();
+diff --git a/services/inventory/index.ts b/services/inventory/index.ts
+index 44468a9..489e33e 100644
+--- a/services/inventory/index.ts
++++ b/services/inventory/index.ts
+@@ -1,5 +1,6 @@
+ export * from "./allocation";
+ export * from "./adjustment";
++export * from "./openingStock";
+ export * from "./batchMutations";
+ export * from "./businessDate";
+ export * from "./errors";
+diff --git a/services/inventory/openingStock.ts b/services/inventory/openingStock.ts
+new file mode 100644
+index 0000000..13fcb38
+--- /dev/null
++++ b/services/inventory/openingStock.ts
+@@ -0,0 +1,255 @@
++import { Prisma, type PrismaClient } from "../../generated/prisma/client";
++import { getBusinessDate } from "./businessDate";
++import { IdempotencyConflictError, PostingInvariantError } from "./errors";
++import { assertGlobalV2CommandKeyAvailable, commandFingerprint, lockIdempotencyKey } from "./idempotency";
++import { withBoundedTransactionRetry } from "./retry";
++import { convertToBaseUnits, POSTGRES_INTEGER_MAX, validateIdempotencyKey } from "./validation";
++
++export type OpeningStockInput = {
++  notes?: string;
++  lines: Array<{
++    productId: string;
++    unitId: number;
++    warehouseId: number;
++    quantityInUnit: number;
++    expiryDate?: string | null;
++  }>;
++};
++
++type OpeningLine = {
++  product: { id: string; name: string; baseUnit: string };
++  unit: { id: number; name: string; multiplier: number };
++  warehouse: { id: number; name: string };
++  quantityInUnit: number;
++  quantityBase: number;
++  expiryDate: string | null;
++  resultingProductSellableCache: number;
++  batchId: string;
++};
++
++type OpeningAudit = {
++  command: "OPENING_STOCK";
++  notes: string | null;
++  lines: OpeningLine[];
++};
++
++function parseAudit(value: string | null): OpeningAudit {
++  try {
++    const audit = JSON.parse(value ?? "") as OpeningAudit;
++    if (audit.command !== "OPENING_STOCK" || !Array.isArray(audit.lines) || !audit.lines.length)
++      throw new Error();
++    return audit;
++  } catch {
++    throw new PostingInvariantError("Persisted opening stock audit data is invalid.");
++  }
++}
++
++async function resultFromPosting(tx: Prisma.TransactionClient, postingId: string, replayed: boolean) {
++  const posting = await tx.inventoryPosting.findUnique({
++    where: { id: postingId },
++    select: {
++      id: true,
++      kind: true,
++      status: true,
++      postedAt: true,
++      notes: true,
++      performedBy: { select: { id: true, name: true, role: true } },
++      movements: {
++        orderBy: { sequence: "asc" },
++        select: { id: true, type: true, batchId: true, productId: true, warehouseId: true, quantityChangeBase: true },
++      },
++    },
++  });
++  if (!posting || posting.kind !== "OPENING_STOCK")
++    throw new PostingInvariantError("Opening stock posting was not found.");
++  const audit = parseAudit(posting.notes);
++  if (posting.movements.length !== audit.lines.length)
++    throw new PostingInvariantError("Persisted opening stock movements are invalid.");
++  const lines = audit.lines.map((line, index) => {
++    const movement = posting.movements[index];
++    if (!movement || movement.type !== "OPENING_STOCK" || movement.batchId !== line.batchId
++      || movement.productId !== line.product.id || movement.warehouseId !== line.warehouse.id
++      || movement.quantityChangeBase !== line.quantityBase)
++      throw new PostingInvariantError("Persisted opening stock movement does not match its audit data.");
++    return { ...line, movementId: movement.id };
++  });
++  return {
++    postingId: posting.id,
++    postingStatus: posting.status,
++    postedAt: posting.postedAt,
++    actor: posting.performedBy,
++    replayed,
++    notes: audit.notes,
++    lines,
++  };
++}
++
++export async function recordOpeningStock(
++  client: PrismaClient,
++  input: OpeningStockInput,
++  actorId: string,
++  requestKey: string,
++) {
++  const idempotencyKey = validateIdempotencyKey(requestKey);
++  const normalized = {
++    notes: input.notes?.trim() ?? null,
++    lines: input.lines.map((line) => ({ ...line, expiryDate: line.expiryDate ?? null })),
++  };
++  const fingerprint = commandFingerprint({ command: "OPENING_STOCK", actorId, ...normalized });
++  const recordedAt = new Date();
++  const businessDate = getBusinessDate(recordedAt);
++
++  return withBoundedTransactionRetry(() => client.$transaction(async (tx) => {
++    await lockIdempotencyKey(tx, idempotencyKey);
++    const existing = await tx.inventoryPosting.findUnique({
++      where: { idempotencyKey },
++      select: { id: true, kind: true, requestFingerprint: true },
++    });
++    if (existing) {
++      if (existing.kind !== "OPENING_STOCK" || existing.requestFingerprint !== fingerprint)
++        throw new IdempotencyConflictError();
++      return resultFromPosting(tx, existing.id, true);
++    }
++    await assertGlobalV2CommandKeyAvailable(tx, idempotencyKey);
++
++    // Product locks serialize opening counts and cache updates across warehouses.
++    const productIds = [...new Set(normalized.lines.map((line) => line.productId))].sort();
++    for (const productId of productIds)
++      await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "Product" WHERE "id" = ${productId} FOR UPDATE`);
++    const unitIds = [...new Set(normalized.lines.map((line) => line.unitId))].sort((a, b) => a - b);
++    for (const unitId of unitIds)
++      await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "ProductUnit" WHERE "id" = ${unitId} FOR SHARE`);
++
++    const products = new Map<string, { id: string; name: string; baseUnit: string; quantityInStock: number }>();
++    const totalByProduct = new Map<string, number>();
++    for (const productId of productIds) {
++      const product = await tx.product.findUnique({
++        where: { id: productId },
++        select: { id: true, name: true, baseUnit: true, quantityInStock: true },
++      });
++      if (!product) throw new PostingInvariantError("Product not found.");
++      const balance = await tx.inventoryBatch.aggregate({
++        where: { productId, disposition: "SELLABLE" },
++        _sum: { quantityOnHandBase: true },
++      });
++      if ((balance._sum.quantityOnHandBase ?? 0) !== product.quantityInStock)
++        throw new PostingInvariantError("Product stock does not reconcile with its existing sellable batches.");
++      products.set(productId, product);
++      totalByProduct.set(productId, 0);
++    }
++
++    const units = new Map<number, { id: number; name: string; productId: string; multiplier: number }>();
++    const warehouses = new Map<number, { id: number; name: string }>();
++    const quantityByLine: number[] = [];
++    const pairs = new Set<string>();
++    for (const line of normalized.lines) {
++      let unit = units.get(line.unitId);
++      if (!unit) {
++        const found = await tx.productUnit.findUnique({
++          where: { id: line.unitId },
++          select: { id: true, name: true, productId: true, multiplier: true },
++        });
++        if (!found) throw new PostingInvariantError("Product unit not found.");
++        unit = found;
++        units.set(unit.id, unit);
++      }
++      if (unit.productId !== line.productId)
++        throw new PostingInvariantError("Product unit does not belong to the selected product.");
++      if (!warehouses.has(line.warehouseId)) {
++        const warehouse = await tx.warehouse.findUnique({
++          where: { id: line.warehouseId }, select: { id: true, name: true },
++        });
++        if (!warehouse) throw new PostingInvariantError("Warehouse not found.");
++        warehouses.set(warehouse.id, warehouse);
++      }
++      if (line.expiryDate !== null && line.expiryDate < businessDate)
++        throw new PostingInvariantError("Expired goods cannot be entered as sellable opening stock.");
++      const quantityBase = convertToBaseUnits(line.quantityInUnit, unit.multiplier);
++      quantityByLine.push(quantityBase);
++      const subtotal = (totalByProduct.get(line.productId) ?? 0) + quantityBase;
++      if (!Number.isSafeInteger(subtotal) || subtotal > POSTGRES_INTEGER_MAX)
++        throw new PostingInvariantError("Opening stock quantity exceeds the supported database range.");
++      totalByProduct.set(line.productId, subtotal);
++      pairs.add(`${line.productId}:${line.warehouseId}`);
++    }
++
++    for (const pair of pairs) {
++      const separator = pair.lastIndexOf(":");
++      const productId = pair.slice(0, separator);
++      const warehouseId = Number(pair.slice(separator + 1));
++      const [batch, legacy] = await Promise.all([
++        tx.inventoryBatch.findFirst({ where: { productId, warehouseId }, select: { id: true } }),
++        tx.stockLevel.findFirst({ where: { productId, warehouseId }, select: { id: true } }),
++      ]);
++      if (batch || legacy)
++        throw new PostingInvariantError("Opening stock already exists for a selected product and warehouse.");
++    }
++    for (const productId of productIds) {
++      const product = products.get(productId)!;
++      const resulting = product.quantityInStock + totalByProduct.get(productId)!;
++      if (!Number.isSafeInteger(resulting) || resulting > POSTGRES_INTEGER_MAX)
++        throw new PostingInvariantError("Product stock would exceed the supported database range.");
++      const changed = await tx.product.updateMany({
++        where: { id: productId, quantityInStock: product.quantityInStock },
++        data: { quantityInStock: resulting },
++      });
++      if (changed.count !== 1)
++        throw new PostingInvariantError("Product stock changed concurrently.");
++    }
++
++    const lines: OpeningLine[] = [];
++    for (const [index, line] of normalized.lines.entries()) {
++      const product = products.get(line.productId)!;
++      const unit = units.get(line.unitId)!;
++      const warehouse = warehouses.get(line.warehouseId)!;
++      const batch = await tx.inventoryBatch.create({
++        data: {
++          productId: product.id,
++          warehouseId: warehouse.id,
++          quantityOnHandBase: quantityByLine[index]!,
++          disposition: "SELLABLE",
++          expiryDate: line.expiryDate ? new Date(`${line.expiryDate}T00:00:00.000Z`) : null,
++          receivedAt: recordedAt,
++        },
++        select: { id: true },
++      });
++      lines.push({
++        product: { id: product.id, name: product.name, baseUnit: product.baseUnit },
++        unit: { id: unit.id, name: unit.name, multiplier: unit.multiplier },
++        warehouse,
++        quantityInUnit: line.quantityInUnit,
++        quantityBase: quantityByLine[index]!,
++        expiryDate: line.expiryDate,
++        resultingProductSellableCache: product.quantityInStock + totalByProduct.get(product.id)!,
++        batchId: batch.id,
++      });
++    }
++    const posting = await tx.inventoryPosting.create({
++      data: {
++        idempotencyKey,
++        requestFingerprint: fingerprint,
++        kind: "OPENING_STOCK",
++        performedById: actorId,
++        notes: JSON.stringify({ command: "OPENING_STOCK", notes: normalized.notes, lines } satisfies OpeningAudit),
++      },
++      select: { id: true },
++    });
++    for (const [index, line] of lines.entries()) {
++      await tx.stockMovement.create({
++        data: {
++          postingId: posting.id,
++          sequence: index + 1,
++          type: "OPENING_STOCK",
++          productId: line.product.id,
++          batchId: line.batchId,
++          warehouseId: line.warehouse.id,
++          quantityChangeBase: line.quantityBase,
++          performedById: actorId,
++          adjustmentReason: "OPENING_STOCK",
++          notes: normalized.notes ?? undefined,
++        },
++      });
++    }
++    return resultFromPosting(tx, posting.id, false);
++  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));
++}
+diff --git a/tests/integration/openingStock.postgres.test.ts b/tests/integration/openingStock.postgres.test.ts
+new file mode 100644
+index 0000000..0a0dafb
+--- /dev/null
++++ b/tests/integration/openingStock.postgres.test.ts
+@@ -0,0 +1,100 @@
++import { randomUUID } from "node:crypto";
++import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
++import { Prisma } from "../../generated/prisma/client";
++import { recordOpeningStock } from "../../services/inventory/openingStock";
++import { clearDisposableDatabase, createIntegrationHarness, type IntegrationHarness } from "./harness";
++
++const enabled = Boolean(process.env.TEST_DATABASE_URL);
++
++describe.skipIf(!enabled)("opening stock on disposable PostgreSQL", () => {
++  let harness: IntegrationHarness;
++
++  beforeAll(async () => {
++    harness = createIntegrationHarness();
++    await clearDisposableDatabase(harness);
++  }, 60_000);
++  afterEach(async () => clearDisposableDatabase(harness));
++  afterAll(async () => harness?.client.$disconnect());
++
++  async function fixture(multiplier = 1) {
++    const suffix = randomUUID();
++    const actor = await harness.client.user.create({ data: {
++      name: "Opening Admin", email: `${suffix}@opening.test`, password: "local", role: "ADMIN",
++    } });
++    const category = await harness.client.category.create({ data: { name: `Opening ${suffix}` } });
++    const product = await harness.client.product.create({ data: {
++      name: `Product ${suffix}`, baseUnit: "piece", categoryId: category.id, quantityInStock: 0,
++    } });
++    const unit = await harness.client.productUnit.create({ data: {
++      name: "Carton", multiplier, price: "1", sku: `OPEN-${suffix}`, productId: product.id,
++    } });
++    const warehouse = await harness.client.warehouse.create({ data: { name: `Warehouse ${suffix}` } });
++    return { actor, product, unit, warehouse };
++  }
++
++  it("atomically records multiple products and expiry batches with server-owned unit conversion", async () => {
++    const first = await fixture(12);
++    const second = await fixture(1);
++    const result = await recordOpeningStock(harness.client, {
++      notes: "  Initial count  ",
++      lines: [
++        { productId: first.product.id, unitId: first.unit.id, warehouseId: first.warehouse.id, quantityInUnit: 2, expiryDate: "2099-01-01" },
++        { productId: first.product.id, unitId: first.unit.id, warehouseId: first.warehouse.id, quantityInUnit: 1, expiryDate: null },
++        { productId: second.product.id, unitId: second.unit.id, warehouseId: second.warehouse.id, quantityInUnit: 5 },
++      ],
++    }, first.actor.id, "opening-multiple");
++    expect(result).toMatchObject({ replayed: false, postingStatus: "POSTED", notes: "Initial count" });
++    expect(result.lines.map((line) => line.quantityBase)).toEqual([24, 12, 5]);
++    expect(result.lines.map((line) => line.resultingProductSellableCache)).toEqual([36, 36, 5]);
++    expect(await harness.client.inventoryBatch.count()).toBe(3);
++    expect(await harness.client.stockMovement.count({ where: { type: "OPENING_STOCK" } })).toBe(3);
++    expect((await harness.client.product.findUniqueOrThrow({ where: { id: first.product.id } })).quantityInStock).toBe(36);
++    expect(await harness.client.purchaseOrder.count()).toBe(0);
++    expect(await harness.client.purchaseReceipt.count()).toBe(0);
++    expect(await harness.client.stockLevel.count()).toBe(0);
++  });
++
++  it("replays exactly once and rejects changed payloads or another command's key", async () => {
++    const f = await fixture(6);
++    const input = { lines: [{ productId: f.product.id, unitId: f.unit.id, warehouseId: f.warehouse.id, quantityInUnit: 2 }] };
++    const first = await recordOpeningStock(harness.client, input, f.actor.id, "opening-replay");
++    const replay = await recordOpeningStock(harness.client, input, f.actor.id, "opening-replay");
++    expect(replay).toMatchObject({ postingId: first.postingId, replayed: true });
++    expect(replay.lines[0]?.batchId).toBe(first.lines[0]?.batchId);
++    await expect(recordOpeningStock(harness.client, { lines: [{ ...input.lines[0]!, quantityInUnit: 3 }] }, f.actor.id, "opening-replay")).rejects.toThrow(/idempotency/i);
++    await harness.client.inventoryPosting.create({ data: {
++      idempotencyKey: "different-command", kind: "MIGRATION_OPENING_BALANCE", performedById: f.actor.id,
++    } });
++    await expect(recordOpeningStock(harness.client, input, f.actor.id, "different-command")).rejects.toThrow(/idempotency/i);
++    expect(await harness.client.inventoryBatch.count()).toBe(1);
++    expect(await harness.client.stockMovement.count()).toBe(1);
++  });
++
++  it("refuses duplicate openings, expired goods, mismatched units, and unreconciled cache", async () => {
++    const f = await fixture();
++    const input = { lines: [{ productId: f.product.id, unitId: f.unit.id, warehouseId: f.warehouse.id, quantityInUnit: 2 }] };
++    await recordOpeningStock(harness.client, input, f.actor.id, "opening-first");
++    await expect(recordOpeningStock(harness.client, input, f.actor.id, "opening-duplicate")).rejects.toThrow(/already exists/i);
++    const expired = await fixture();
++    await expect(recordOpeningStock(harness.client, { lines: [{ productId: expired.product.id, unitId: expired.unit.id, warehouseId: expired.warehouse.id, quantityInUnit: 1, expiryDate: "2000-01-01" }] }, expired.actor.id, "opening-expired")).rejects.toThrow(/expired/i);
++    await expect(recordOpeningStock(harness.client, { lines: [{ productId: expired.product.id, unitId: f.unit.id, warehouseId: expired.warehouse.id, quantityInUnit: 1 }] }, expired.actor.id, "opening-wrong-unit")).rejects.toThrow(/does not belong/i);
++    await harness.client.product.update({ where: { id: expired.product.id }, data: { quantityInStock: 1 } });
++    await expect(recordOpeningStock(harness.client, { lines: [{ productId: expired.product.id, unitId: expired.unit.id, warehouseId: expired.warehouse.id, quantityInUnit: 1 }] }, expired.actor.id, "opening-bad-cache")).rejects.toThrow(/reconcile/i);
++    expect(await harness.client.inventoryBatch.count()).toBe(1);
++  });
++
++  it("rolls back batches, cache, and posting if a movement cannot be written", async () => {
++    const f = await fixture();
++    await harness.client.$executeRaw(Prisma.sql`CREATE FUNCTION fail_opening_movement() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW."type" = 'OPENING_STOCK' THEN RAISE EXCEPTION 'forced opening movement failure'; END IF; RETURN NEW; END $$`);
++    await harness.client.$executeRaw(Prisma.sql`CREATE TRIGGER "fail_opening_movement_trigger" BEFORE INSERT ON "StockMovement" FOR EACH ROW EXECUTE FUNCTION fail_opening_movement()`);
++    try {
++      await expect(recordOpeningStock(harness.client, { lines: [{ productId: f.product.id, unitId: f.unit.id, warehouseId: f.warehouse.id, quantityInUnit: 4 }] }, f.actor.id, "opening-failed")).rejects.toThrow();
++      expect(await harness.client.inventoryBatch.count()).toBe(0);
++      expect(await harness.client.inventoryPosting.count()).toBe(0);
++      expect((await harness.client.product.findUniqueOrThrow({ where: { id: f.product.id } })).quantityInStock).toBe(0);
++    } finally {
++      await harness.client.$executeRaw(Prisma.sql`DROP TRIGGER "fail_opening_movement_trigger" ON "StockMovement"`);
++      await harness.client.$executeRaw(Prisma.sql`DROP FUNCTION fail_opening_movement()`);
++    }
++  });
++});
+diff --git a/tests/openingStock.routes.test.ts b/tests/openingStock.routes.test.ts
+new file mode 100644
+index 0000000..656a7dd
+--- /dev/null
++++ b/tests/openingStock.routes.test.ts
+@@ -0,0 +1,46 @@
++import jwt from "jsonwebtoken";
++import request from "supertest";
++import { beforeEach, describe, expect, it, vi } from "vitest";
++
++const db = vi.hoisted(() => ({ user: { findUnique: vi.fn() }, $transaction: vi.fn() }));
++vi.mock("../prisma", () => ({ default: db, connectToDb: vi.fn(), disconnectFromDb: vi.fn() }));
++import app from "../app";
++
++const secret = "opening-stock-route-secret";
++const token = (role: string) => `Bearer ${jwt.sign({ id: role }, secret)}`;
++const user = (role: string) => ({ id: role, name: role, email: `${role}@test`, role });
++const body = () => ({ lines: [{
++  productId: crypto.randomUUID(), unitId: 1, warehouseId: 1, quantityInUnit: 3,
++}] });
++
++describe("opening stock route", () => {
++  beforeEach(() => {
++    vi.clearAllMocks();
++    process.env.JWT_SECRET = secret;
++    process.env.NODE_ENV = "test";
++    process.env.INVENTORY_V2_ENABLED = "true";
++  });
++
++  it("requires authentication and an idempotency key", async () => {
++    expect((await request(app).post("/api/v1/inventory/opening-stock").set("Idempotency-Key", "opening-auth").send(body())).status).toBe(401);
++    db.user.findUnique.mockResolvedValue(user("ADMIN"));
++    expect((await request(app).post("/api/v1/inventory/opening-stock").set("Authorization", token("ADMIN")).send(body())).status).toBe(400);
++  });
++
++  it.each(["STAFF", "AUDITOR"])("denies %s", async (role) => {
++    db.user.findUnique.mockResolvedValue(user(role));
++    expect((await request(app).post("/api/v1/inventory/opening-stock").set("Authorization", token(role)).set("Idempotency-Key", `opening-${role}`).send(body())).status).toBe(403);
++  });
++
++  it.each(["ADMIN", "MANAGER"])("allows %s through authorization and enforces strict validation", async (role) => {
++    db.user.findUnique.mockResolvedValue(user(role));
++    expect((await request(app).post("/api/v1/inventory/opening-stock").set("Authorization", token(role)).set("Idempotency-Key", `opening-${role}`).send({ lines: [{ ...body().lines[0], quantityInUnit: "3" }] })).status).toBe(400);
++    expect(db.$transaction).not.toHaveBeenCalled();
++  });
++
++  it("rejects when Inventory V2 is disabled", async () => {
++    db.user.findUnique.mockResolvedValue(user("ADMIN"));
++    process.env.INVENTORY_V2_ENABLED = "false";
++    expect((await request(app).post("/api/v1/inventory/opening-stock").set("Authorization", token("ADMIN")).set("Idempotency-Key", "opening-disabled").send(body())).status).toBe(503);
++  });
++});
+diff --git a/tests/unit/openingStockValidation.test.ts b/tests/unit/openingStockValidation.test.ts
+new file mode 100644
+index 0000000..95acd8c
+--- /dev/null
++++ b/tests/unit/openingStockValidation.test.ts
+@@ -0,0 +1,33 @@
++import { describe, expect, it } from "vitest";
++import { openingStockSchema } from "../../schemas/inventoryV2";
++
++const line = () => ({
++  productId: crypto.randomUUID(),
++  unitId: 1,
++  warehouseId: 1,
++  quantityInUnit: 3,
++  expiryDate: "2099-12-31",
++});
++
++describe("opening stock validation", () => {
++  it("accepts multiple products and distinct expiry batches", () => {
++    const first = line();
++    expect(openingStockSchema.safeParse({
++      notes: "Initial shop count",
++      lines: [first, { ...first, expiryDate: null }, line()],
++    }).success).toBe(true);
++  });
++
++  it("rejects duplicates, invalid quantities, dates, and unknown fields", () => {
++    const first = line();
++    for (const body of [
++      { lines: [] },
++      { lines: [first, first] },
++      { lines: [{ ...first, quantityInUnit: 0 }] },
++      { lines: [{ ...first, quantityInUnit: "3" }] },
++      { lines: [{ ...first, expiryDate: "2099-02-30" }] },
++      { lines: [{ ...first, extra: true }] },
++      { lines: [first], extra: true },
++    ]) expect(openingStockSchema.safeParse(body).success).toBe(false);
++  });
++});
