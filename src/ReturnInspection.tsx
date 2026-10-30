@@ -1,4 +1,5 @@
 import { AppSelect } from "./components/AppSelect";
+import { X } from "lucide-react";
 import React, { useEffect, useState } from "react";
 import { ApiError, command, newKey, request } from "./api";
 type ReturnItem = {
@@ -109,7 +110,7 @@ export function ReturnInspection({
         <div className="modal-head">
           <h2>Inspect returned stock</h2>
           <button className="icon" onClick={close} aria-label="Close">
-            ×
+            <X size={18} />
           </button>
         </div>
         <form onSubmit={submit}>

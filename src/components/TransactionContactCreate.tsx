@@ -1,5 +1,6 @@
 import { useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
+import { X } from "lucide-react";
 import { ApiError, request } from "../api";
 
 export type TransactionContact = { id: string; name: string };
@@ -81,7 +82,7 @@ export function TransactionContactCreate({
             onClick={close}
             disabled={busy}
           >
-            ×
+            <X size={18} />
           </button>
         </div>
         <form onSubmit={submit}>

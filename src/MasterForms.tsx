@@ -1,6 +1,7 @@
 import { AmountInput } from "./components/AmountInput";
 import { CategoryCombobox } from "./components/CategoryCombobox";
 import { AppSelect } from "./components/AppSelect";
+import { X } from "lucide-react";
 import React, { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { cachedRequest } from "./query";
@@ -37,7 +38,7 @@ function Frame({
         <div className="modal-head">
           <h2>{title}</h2>
           <button className="icon" onClick={close} aria-label="Close">
-            ×
+            <X size={18} />
           </button>
         </div>
         {children}

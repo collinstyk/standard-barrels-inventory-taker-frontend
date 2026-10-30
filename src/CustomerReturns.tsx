@@ -1,4 +1,5 @@
 import { AppSelect } from "./components/AppSelect";
+import { X } from "lucide-react";
 import React, { useEffect, useState } from "react";
 import { cachedRequest, refreshRequest } from "./query";
 import { ApiError, command, date, newKey, request, type Role } from "./api";
@@ -138,7 +139,7 @@ export function CustomerReturns({
                 onClick={() => setSelected(null)}
                 aria-label="Close"
               >
-                ×
+                <X size={18} />
               </button>
             </div>
             <p>{selected.reason}</p>
@@ -265,7 +266,7 @@ function ReturnCreate({
         <div className="modal-head">
           <h2>New customer return</h2>
           <button className="icon" onClick={close} aria-label="Close">
-            ×
+            <X size={18} />
           </button>
         </div>
         <form onSubmit={submit}>
@@ -392,7 +393,7 @@ function ReceiveReturn({
         <div className="modal-head">
           <h2>Receive return #{value.id}</h2>
           <button className="icon" onClick={close} aria-label="Close">
-            ×
+            <X size={18} />
           </button>
         </div>
         <form onSubmit={submit}>

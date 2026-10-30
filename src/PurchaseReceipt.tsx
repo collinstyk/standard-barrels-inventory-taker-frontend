@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { cachedRequest } from "./query";
 import { AppSelect } from "./components/AppSelect";
 import { AmountInput } from "./components/AmountInput";
+import { X } from "lucide-react";
 import { ApiError, command, newKey, request, type ApiList } from "./api";
 import { decimal, quantity } from "./sales/checkout-model";
 
@@ -197,7 +198,7 @@ export function ReceiptModal({
             aria-label="Close receipt"
             onClick={close}
           >
-            ×
+            <X size={18} />
           </button>
         </div>
         {attempt ? (

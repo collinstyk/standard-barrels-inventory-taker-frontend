@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { X } from "lucide-react";
 import { cachedRequest, refreshRequest } from "./query";
 import { ApiError, command, date, newKey, request, type Role } from "./api";
 type Return = {
@@ -121,7 +122,7 @@ export function SupplierReturns({
                 onClick={() => setPosting(null)}
                 aria-label="Close"
               >
-                ×
+                <X size={18} />
               </button>
             </div>
             <p className="modal-intro">
