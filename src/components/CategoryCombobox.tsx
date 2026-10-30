@@ -109,6 +109,9 @@ export function CategoryCombobox({
           </Command>
         </PopoverContent>
       </Popover>
+      <button type="button" className="category-create-link" disabled={disabled} onClick={() => { setSearch(""); setOpen(true); }}>
+        <Plus size={14} aria-hidden="true" /> Add a new category
+      </button>
       {newCategoryName && <small>“{newCategoryName}” will be saved together with this product.</small>}
     </div>
   );

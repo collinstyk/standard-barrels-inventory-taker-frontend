@@ -40,6 +40,8 @@
 .category-combobox-trigger:disabled { opacity: .55; cursor: not-allowed; }
 .category-placeholder { color: var(--muted); }
 .category-field small, .category-load-state { color: var(--muted); font-size: 11px; line-height: 1.4; }
+.category-create-link { display: inline-flex; align-items: center; gap: 5px; align-self: flex-start; border: 0; padding: 2px 0; background: transparent; color: var(--link); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.category-create-link:disabled { opacity: .5; cursor: not-allowed; }
 
 .category-popover {
   z-index: 80;

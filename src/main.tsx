@@ -7,7 +7,7 @@ import { SaleComposer } from "./sales/SaleComposer";
 import { decimal } from "./sales/checkout-model";
 import { readAttempt } from "./sales/checkout-storage";
 import "./tailwind.css";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Boxes,
@@ -54,6 +54,7 @@ import { ProductCreate, UnitCreate, EditRecord } from "./MasterForms";
 import { SupplierReturns } from "./SupplierReturns";
 import { InviteStaff, AcceptInvite } from "./Invitations";
 import { OpeningStock } from "./OpeningStock";
+import { InventoryAvailability } from "./InventoryAvailability";
 type Page =
   | "Sales"
   | "Purchases"
@@ -86,7 +87,7 @@ const nav: [Page, React.ReactNode][] = [
 function status(value: string | undefined) {
   return (
     <span className={`badge ${statusTone(value)}`}>
-      {value?.replaceAll("_", " ") || "—"}
+      {value?.replaceAll("_", " ").toLowerCase() || "—"}
     </span>
   );
 }
@@ -406,11 +407,13 @@ function Login({ onLogin }: { onLogin: (u: User) => void }) {
   );
 }
 function Sales({ user }: { user: User }) {
+  const loadId = useRef(0);
   const [rows, setRows] = useState<SaleList[]>([]),
     [loading, setLoading] = useState(true),
     [error, setError] = useState<unknown>(null),
     [search, setSearch] = useState(""),
-    [filter, setFilter] = useState(""),
+    [deliveryFilter, setDeliveryFilter] = useState(""),
+    [paymentFilter, setPaymentFilter] = useState(""),
     [selected, setSelected] = useState<number | null>(null),
     [creating, setCreating] = useState(
       () => user.role !== "AUDITOR" && !!readAttempt(user.id),
@@ -418,27 +421,32 @@ function Sales({ user }: { user: User }) {
     [page, setPage] = useState(1),
     [pages, setPages] = useState(1);
   async function load(force = false) {
+    const currentLoad = ++loadId.current;
     setLoading(true);
     setError(null);
     try {
       const q = new URLSearchParams({ page: String(page), limit: "20" });
       if (search.trim()) q.set("search", search.trim());
-      if (filter) q.set("deliveryStatus", filter);
+      if (deliveryFilter) q.set("deliveryStatus", deliveryFilter);
+      if (paymentFilter) q.set("paymentStatus", paymentFilter);
       const path = `/sale/?${q}`;
       const r = await (force ? refreshRequest : cachedRequest)<
         ApiList<SaleList>
       >(path);
-      setRows(listData(r, path));
-      setPages(r.pagination?.totalPages || 1);
+      const nextRows = listData(r, path);
+      if (currentLoad === loadId.current) {
+        setRows(nextRows);
+        setPages(r.pagination?.totalPages || 1);
+      }
     } catch (e) {
-      setError(e);
+      if (currentLoad === loadId.current) setError(e);
     } finally {
-      setLoading(false);
+      if (currentLoad === loadId.current) setLoading(false);
     }
   }
   useEffect(() => {
     load();
-  }, [page, search, filter]);
+  }, [page, search, deliveryFilter, paymentFilter]);
   if (creating)
     return (
       <SaleComposer
@@ -527,16 +535,30 @@ function Sales({ user }: { user: User }) {
           </label>
           <AppSelect
             aria-label="Filter delivery status"
-            value={filter}
+            value={deliveryFilter}
             onValueChange={(value) => {
-              setFilter(value);
+              setDeliveryFilter(value);
               setPage(1);
             }}
             options={[
               { value: "", label: <>All delivery states</> },
-              { value: "NOT_DELIVERED", label: <>NOT_DELIVERED</> },
-              { value: "PARTLY_DELIVERED", label: <>PARTLY_DELIVERED</> },
-              { value: "FULLY_DELIVERED", label: <>FULLY_DELIVERED</> },
+              { value: "NOT_DELIVERED", label: <>not delivered</> },
+              { value: "PARTLY_DELIVERED", label: <>partly delivered</> },
+              { value: "FULLY_DELIVERED", label: <>fully delivered</> },
+            ]}
+          />
+          <AppSelect
+            aria-label="Filter payment status"
+            value={paymentFilter}
+            onValueChange={(value) => {
+              setPaymentFilter(value);
+              setPage(1);
+            }}
+            options={[
+              { value: "", label: <>All payment states</> },
+              { value: "NOT_PAID", label: <>not paid</> },
+              { value: "PARTLY_PAID", label: <>partly paid</> },
+              { value: "FULLY_PAID", label: <>fully paid</> },
             ]}
           />
         </div>
@@ -694,7 +716,7 @@ function SaleView({
                 <strong
                   className={`status-large status-tone-${statusTone(data.paymentStatus)}`}
                 >
-                  {data.paymentStatus.replaceAll("_", " ")}
+                  {data.paymentStatus.replaceAll("_", " ").toLowerCase()}
                 </strong>
                 <small>Paid: {money(data.amountPaid)}</small>
               </div>
@@ -703,9 +725,9 @@ function SaleView({
                 <strong
                   className={`status-large status-tone-${statusTone(data.deliveryStatus)}`}
                 >
-                  {data.deliveryStatus.replaceAll("_", " ")}
+                  {data.deliveryStatus.replaceAll("_", " ").toLowerCase()}
                 </strong>
-                <small>Commercial: {data.transactionStatus}</small>
+                <small>Commercial: {data.transactionStatus.toLowerCase()}</small>
               </div>
             </div>
             <div className="panel">
@@ -1051,6 +1073,7 @@ type Purchase = Entity & {
   }>;
 };
 function Purchases({ user }: { user: User }) {
+  const loadId = useRef(0);
   const [rows, setRows] = useState<Purchase[]>([]),
     [detail, setDetail] = useState<Purchase | null>(null),
     [error, setError] = useState<unknown>(null),
@@ -1064,19 +1087,32 @@ function Purchases({ user }: { user: User }) {
     [creating, setCreating] = useState(
       () => user.role !== "AUDITOR" && !!readPurchaseAttempt(user.id),
     ),
-    [commercial, setCommercial] = useState(false);
+    [commercial, setCommercial] = useState(false),
+    [commercialFilter, setCommercialFilter] = useState(""),
+    [receivingFilter, setReceivingFilter] = useState(""),
+    [page, setPage] = useState(1),
+    [pages, setPages] = useState(1);
   async function load(force = false) {
+    const currentLoad = ++loadId.current;
     setLoading(true);
     setError(null);
     try {
+      const q = new URLSearchParams({ page: String(page), limit: "50" });
+      if (commercialFilter) q.set("transactionStatus", commercialFilter);
+      if (receivingFilter) q.set("receivingStatus", receivingFilter);
+      const path = `/purchase/?${q}`;
       const r = await (force ? refreshRequest : cachedRequest)<
         ApiList<Purchase>
-      >("/purchase/?limit=50");
-      setRows(listData(r, "/purchase/?limit=50"));
+      >(path);
+      const nextRows = listData(r, path);
+      if (currentLoad === loadId.current) {
+        setRows(nextRows);
+        setPages(r.pagination?.totalPages || 1);
+      }
     } catch (e) {
-      setError(e);
+      if (currentLoad === loadId.current) setError(e);
     } finally {
-      setLoading(false);
+      if (currentLoad === loadId.current) setLoading(false);
     }
   }
   async function open(id: number): Promise<boolean> {
@@ -1095,7 +1131,7 @@ function Purchases({ user }: { user: User }) {
   }
   useEffect(() => {
     load();
-  }, []);
+  }, [page, commercialFilter, receivingFilter]);
   async function post() {
     if (!detail || posting === null || postBusy) return;
     const savedKey = `sb-purchase-post-v1:${user.id}:${detail.id}:${posting}`;
@@ -1202,13 +1238,13 @@ function Purchases({ user }: { user: User }) {
               <small
                 className={`status-tone-${statusTone(detail.paymentStatus)}`}
               >
-                {detail.paymentStatus.replaceAll("_", " ")}
+                {detail.paymentStatus.replaceAll("_", " ").toLowerCase()}
               </small>
             </div>
             <div className="summary">
               <span>Receiving</span>
               <strong className="status-large">
-                {detail.receivingStatus?.replaceAll("_", " ")}
+                {detail.receivingStatus?.replaceAll("_", " ").toLowerCase()}
               </strong>
             </div>
           </div>
@@ -1411,6 +1447,37 @@ function Purchases({ user }: { user: User }) {
                 <RefreshCw size={16} /> Refresh
               </button>
             </div>
+            <div className="filters">
+              <AppSelect
+                aria-label="Filter purchase commercial status"
+                value={commercialFilter}
+                onValueChange={(value) => {
+                  setCommercialFilter(value);
+                  setPage(1);
+                }}
+                options={[
+                  { value: "", label: <>All commercial states</> },
+                  { value: "DRAFT", label: <>draft</> },
+                  { value: "PENDING", label: <>pending</> },
+                  { value: "COMPLETED", label: <>completed</> },
+                  { value: "CANCELLED", label: <>cancelled</> },
+                ]}
+              />
+              <AppSelect
+                aria-label="Filter purchase receiving status"
+                value={receivingFilter}
+                onValueChange={(value) => {
+                  setReceivingFilter(value);
+                  setPage(1);
+                }}
+                options={[
+                  { value: "", label: <>All receiving states</> },
+                  { value: "NOT_RECEIVED", label: <>not received</> },
+                  { value: "PARTLY_RECEIVED", label: <>partly received</> },
+                  { value: "FULLY_RECEIVED", label: <>fully received</> },
+                ]}
+              />
+            </div>
             {loading ? (
               <div className="state">Loading purchases…</div>
             ) : error ? (
@@ -1460,6 +1527,13 @@ function Purchases({ user }: { user: User }) {
             ) : (
               <div className="state">No purchases found.</div>
             )}
+            <div className="pagination">
+              <span>Page {page} of {pages}</span>
+              <div>
+                <button disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</button>
+                <button disabled={page >= pages} onClick={() => setPage(page + 1)}>Next</button>
+              </div>
+            </div>
           </div>
         </>
       )}
@@ -1568,15 +1642,10 @@ function Inventory({ user }: { user: User }) {
   const [opening, setOpening] = useState(false);
   const [tab, setTab] = useState<
       "availability" | "low-stock" | "expiring-soon"
-    >("low-stock"),
+    >("availability"),
     [data, setData] = useState<any[]>([]),
     [error, setError] = useState<unknown>(null),
     [loading, setLoading] = useState(true),
-    [products, setProducts] = useState<Entity[]>([]),
-    [productId, setProductId] = useState(""),
-    [units, setUnits] = useState<Entity[]>([]),
-    [unitId, setUnitId] = useState(""),
-    [availability, setAvailability] = useState<any>(null),
     [adjusting, setAdjusting] = useState(false);
   async function load(force = false) {
     setLoading(true);
@@ -1599,33 +1668,6 @@ function Inventory({ user }: { user: User }) {
   useEffect(() => {
     load();
   }, [tab]);
-  useEffect(() => {
-    cachedRequest<ApiList<Entity>>("/catalog/products?limit=100")
-      .then((r) => setProducts(r.data))
-      .catch(() => {});
-  }, []);
-  useEffect(() => {
-    if (productId)
-      cachedRequest<ApiList<Entity>>(
-        `/catalog/products/${productId}/units?limit=100`,
-      )
-        .then((r) => setUnits(r.data))
-        .catch(() => {});
-  }, [productId]);
-  async function check() {
-    setLoading(true);
-    setError(null);
-    try {
-      const r = await request<{ data: any }>(
-        `/inventory/availability?productId=${productId}&unitId=${unitId}`,
-      );
-      setAvailability(r.data);
-    } catch (e) {
-      setError(e);
-    } finally {
-      setLoading(false);
-    }
-  }
   if (opening) return <OpeningStock userId={user.id} close={() => { setOpening(false); load(true); }} />;
   return (
     <>
@@ -1653,102 +1695,7 @@ function Inventory({ user }: { user: User }) {
           </button>
         ))}
       </div>
-      <div className="panel">
-        {tab === "availability" ? (
-          <>
-            <div className="panel-head">
-              <div>
-                <h2>Check availability</h2>
-                <p>
-                  Informational snapshot; stock is checked again at dispatch.
-                </p>
-              </div>
-            </div>
-            <div className="filters">
-              <AppSelect
-                value={productId}
-                onValueChange={(value) => {
-                  setProductId(value);
-                  setUnitId("");
-                  setAvailability(null);
-                }}
-                aria-label="Product"
-                options={[
-                  { value: "", label: <>Choose product</> },
-                  ...products.map((p) => ({
-                    value: String(p.id),
-                    label: <>{p.name}</>,
-                  })),
-                ]}
-              />
-              <AppSelect
-                value={unitId}
-                onValueChange={(value) => {
-                  setUnitId(value);
-                  setAvailability(null);
-                }}
-                aria-label="Product unit"
-                options={[
-                  { value: "", label: <>Choose unit</> },
-                  ...units.map((u) => ({
-                    value: String(u.id),
-                    label: <>{u.name}</>,
-                  })),
-                ]}
-              />
-              <button
-                className="primary"
-                disabled={!productId || !unitId}
-                onClick={check}
-              >
-                Check stock
-              </button>
-            </div>
-            {loading ? (
-              <div className="state">Loading…</div>
-            ) : error ? (
-              stateMessage(error, check)
-            ) : (
-              availability && (
-                <div className="availability">
-                  <div className="availability-note">
-                    Previewed {date(availability.previewedAt)} · Informational
-                    only. Recheck at dispatch.
-                  </div>
-                  {availability.warehouses?.length ? (
-                    availability.warehouses.map((w: any) => (
-                      <div className="availability-row" key={w.warehouseId}>
-                        <div>
-                          <b>{w.warehouseName}</b>
-                          <small>
-                            {w.warehouseLocation || "Warehouse"} ·{" "}
-                            {w.inventoryComposition?.replaceAll("_", " ")}
-                          </small>
-                        </div>
-                        <div>
-                          <strong>{w.availableQuantityInRequestedUnit}</strong>
-                          <small>selected units</small>
-                        </div>
-                        <div>
-                          <strong>{w.sellableQuantityBase}</strong>
-                          <small>base units</small>
-                        </div>
-                        <div>
-                          <small>Earliest expiry</small>
-                          <b>{w.earliestEligibleExpiryDate || "—"}</b>
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="empty-inline">
-                      No sellable stock currently available.
-                    </div>
-                  )}
-                </div>
-              )
-            )}
-          </>
-        ) : (
+      {tab === "availability" ? <InventoryAvailability /> : <div className="panel">
           <>
             <div className="panel-head">
               <h2>
@@ -1795,8 +1742,7 @@ function Inventory({ user }: { user: User }) {
               </div>
             )}
           </>
-        )}
-      </div>
+      </div>}
       {adjusting && (
         <AdjustmentModal
           close={() => setAdjusting(false)}
@@ -1926,6 +1872,11 @@ function Directory({ page, user }: { page: Page; user: User }) {
   };
   const path = paths[page];
   const [rows, setRows] = useState<Entity[]>([]),
+    [productPage, setProductPage] = useState(1),
+    [productSearch, setProductSearch] = useState(""),
+    [productTerm, setProductTerm] = useState(""),
+    [productPagination, setProductPagination] = useState<ApiList<Entity>["pagination"]>(),
+    [productUnits, setProductUnits] = useState<Record<string, string>>({}),
     [error, setError] = useState<unknown>(null),
     [loading, setLoading] = useState(true),
     [creating, setCreating] = useState(false),
@@ -1937,6 +1888,10 @@ function Directory({ page, user }: { page: Page; user: User }) {
     [warehouseId, setWarehouseId] = useState<string | null>(() =>
       warehouseIdFromHash(),
     );
+  useEffect(() => {
+    const timer = window.setTimeout(() => { setProductTerm(productSearch.trim()); setProductPage(1); }, 300);
+    return () => window.clearTimeout(timer);
+  }, [productSearch]);
   async function load(force = false) {
     setLoading(true);
     setError(null);
@@ -1945,10 +1900,12 @@ function Directory({ page, user }: { page: Page; user: User }) {
         setRows([]);
         return;
       }
-      const r = await (force ? refreshRequest : cachedRequest)<ApiList<Entity>>(
-        `${path}${path.includes("?") ? "&" : "?"}limit=100`,
-      );
+      const listPath = page === "Products"
+        ? `${path}?page=${productPage}&limit=20${productTerm ? `&search=${encodeURIComponent(productTerm)}` : ""}`
+        : `${path}${path.includes("?") ? "&" : "?"}limit=100`;
+      const r = await (force ? refreshRequest : cachedRequest)<ApiList<Entity>>(listPath);
       setRows(listData(r, path));
+      if (page === "Products") setProductPagination(r.pagination);
     } catch (e) {
       setError(e);
     } finally {
@@ -1958,7 +1915,7 @@ function Directory({ page, user }: { page: Page; user: User }) {
   useEffect(() => {
     setSelected(null);
     if (page !== "Warehouses" || !warehouseId) load();
-  }, [page, warehouseId]);
+  }, [page, warehouseId, productPage, productTerm]);
   useEffect(() => {
     const sync = () => setWarehouseId(warehouseIdFromHash());
     window.addEventListener("hashchange", sync);
@@ -2030,24 +1987,30 @@ function Directory({ page, user }: { page: Page; user: User }) {
             <RefreshCw size={16} /> Refresh
           </button>
         </div>
+        {page === "Products" && <div className="inventory-toolbar">
+          <label className="inventory-search"><Search size={17} aria-hidden="true" /><span className="sr-only">Search products by name or SKU</span>
+            <input value={productSearch} onChange={(event) => setProductSearch(event.target.value)} placeholder="Search product name or SKU" /></label>
+          <span className="muted">{productPagination?.total ?? 0} products</span>
+        </div>}
         {loading ? (
           <div className="state">Loading {page.toLowerCase()}…</div>
         ) : error ? (
           stateMessage(error, () => load(true))
         ) : rows.length ? (
           <div className="table-scroll">
-            <table>
+            <table className={page === "Products" ? "product-table" : undefined}>
               <thead>
                 <tr>
+                  <th scope="col">S/N</th>
                   <th>Name</th>
-                  <th>ID</th>
+                  {page === "Products" && <><th>Unit</th><th>Cost price</th><th>Selling price</th></>}
                   {page === "Contacts" && <th>Type</th>}
                   {page === "Warehouses" && <th>Location</th>}
-                  <th />
+                  <th>{page === "Products" ? "" : ""}</th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => (
+                {rows.map((r, index) => (
                   <tr
                     key={r.id}
                     onClick={() =>
@@ -2057,17 +2020,28 @@ function Directory({ page, user }: { page: Page; user: User }) {
                     }
                     tabIndex={0}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter") {
+                      if (e.key === "Enter" && e.target === e.currentTarget) {
                         if (page === "Warehouses")
                           window.location.hash = `warehouse/${r.id}`;
                         else setSelected(r);
                       }
                     }}
                   >
+                    <td className="muted">{page === "Products" ? (productPage - 1) * 20 + index + 1 : index + 1}</td>
                     <td>
                       <b>{r.name}</b>
                     </td>
-                    <td className="muted">{String(r.id).slice(0, 12)}…</td>
+                    {page === "Products" && (() => {
+                      const units = Array.isArray(r.units) ? r.units as Entity[] : [];
+                      const unit = units.find((item) => String(item.id) === productUnits[String(r.id)]) ?? units[0];
+                      return <>
+                        <td onClick={(event) => event.stopPropagation()} data-label="Unit">{units.length > 1 ? <AppSelect
+                          value={String(unit?.id ?? "")} onValueChange={(value) => setProductUnits((current) => ({ ...current, [String(r.id)]: value }))}
+                          aria-label={`Unit for ${r.name}`} options={units.map((item) => ({ value: String(item.id), label: <>{item.name}</> }))} /> : unit?.name || "—"}</td>
+                        <td data-label="Cost price" className="muted">Not tracked</td>
+                        <td data-label="Selling price"><strong>{unit ? money(unit.price) : "—"}</strong></td>
+                      </>;
+                    })()}
                     {page === "Contacts" && (
                       <td>
                         {r.isSupplier ? "Supplier " : ""}
@@ -2075,9 +2049,14 @@ function Directory({ page, user }: { page: Page; user: User }) {
                       </td>
                     )}
                     {page === "Warehouses" && <td>{r.location || "—"}</td>}
-                    <td>
-                      <ChevronRight size={17} />
-                    </td>
+                    <td onClick={(event) => event.stopPropagation()}>{page === "Products" && ["ADMIN", "MANAGER"].includes(user.role) ? (
+                      <button className="subtle" disabled={!r.units?.length} onClick={() => {
+                        const units = r.units as Entity[];
+                        const unit = units.find((item) => String(item.id) === productUnits[String(r.id)]) ?? units[0];
+                        setSelected(r);
+                        setUnitEditing(unit);
+                      }}>Update price</button>
+                    ) : <ChevronRight size={17} />}</td>
                   </tr>
                 ))}
               </tbody>
@@ -2088,8 +2067,13 @@ function Directory({ page, user }: { page: Page; user: User }) {
             <h3>No {page.toLowerCase()} yet</h3>
           </div>
         )}
+        {page === "Products" && productPagination && productPagination.totalPages > 1 && <div className="inventory-pagination">
+          <span>Page {productPagination.page} of {productPagination.totalPages}</span><div>
+            <button className="subtle" disabled={productPage <= 1 || loading} onClick={() => setProductPage(productPage - 1)}>Previous</button>
+            <button className="subtle" disabled={productPage >= productPagination.totalPages || loading} onClick={() => setProductPage(productPage + 1)}>Next</button>
+          </div></div>}
       </div>
-      {selected && page !== "Warehouses" && (
+      {selected && page !== "Warehouses" && !unitEditing && (
         <Modal title={selected.name || page} close={() => setSelected(null)}>
           <div className="detail-pairs">
             {Object.entries(selected)
@@ -2157,6 +2141,8 @@ function Directory({ page, user }: { page: Page; user: User }) {
           close={() => setUnitEditing(null)}
           done={() => {
             setUnitEditing(null);
+            setSelected(null);
+            load(true);
             refreshRequest<ApiList<Entity>>(
               `/catalog/products/${selected.id}/units`,
             ).then((r) => setChild(r.data));
