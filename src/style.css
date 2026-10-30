@@ -1320,6 +1320,8 @@ td small {
 .stock-quantity { font-size: 16px; font-weight: 800; color: var(--text); }
 .stock-quantity.low { color: var(--warning); }
 .stock-quantity.critical { color: var(--error); }
+.reorder-unit-field { display: grid; gap: 7px; margin-bottom: 16px; color: var(--muted); font-size: 12px; font-weight: 700; }
+.reorder-equivalent { margin: 4px 0 16px; color: var(--muted); font-size: 12px; }
 .product-table { min-width: 700px; }
 .product-table td:last-child { white-space: nowrap; }
 

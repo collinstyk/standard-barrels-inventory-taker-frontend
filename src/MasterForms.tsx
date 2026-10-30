@@ -1,5 +1,6 @@
 import { AmountInput } from "./components/AmountInput";
 import { CategoryCombobox } from "./components/CategoryCombobox";
+import { AppSelect } from "./components/AppSelect";
 import React, { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { cachedRequest } from "./query";
@@ -161,7 +162,7 @@ export function ProductCreate({
           </div>
         </div>
         <label>
-          Reorder point (base units)
+          Reorder point ({baseUnit || "base units"})
           <input
             type="number"
             min="0"
@@ -171,6 +172,7 @@ export function ProductCreate({
             onChange={(e) => setReorder(e.target.value)}
           />
         </label>
+        <small className="category-load-state">You can set this in a larger product unit after adding that unit.</small>
         <h3>Base ProductUnit</h3>
         <div className="form-grid">
           <label>
@@ -302,6 +304,67 @@ export function UnitCreate({
     </Frame>
   );
 }
+export function ReorderPointEditor({
+  product,
+  close,
+  done,
+}: {
+  product: { id: string | number; name: string; baseUnit: string; reorderPoint: number; units: Array<{ id: number; name: string; multiplier: number }> };
+  close: () => void;
+  done: () => void;
+}) {
+  const baseUnit = product.units.find((unit) => unit.multiplier === 1) ?? product.units[0];
+  const [unitId, setUnitId] = useState(String(baseUnit?.id ?? ""));
+  const [quantity, setQuantity] = useState(String(product.reorderPoint));
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const unit = product.units.find((item) => String(item.id) === unitId) ?? baseUnit;
+  const baseQuantity = /^\d+$/.test(quantity) && unit ? BigInt(quantity) * BigInt(unit.multiplier) : null;
+  const valid = baseQuantity !== null && baseQuantity <= 2_147_483_647n;
+
+  function chooseUnit(value: string) {
+    const next = product.units.find((item) => String(item.id) === value);
+    if (!next) return;
+    setUnitId(value);
+    setQuantity(product.reorderPoint % next.multiplier === 0
+      ? String(product.reorderPoint / next.multiplier) : "");
+    setError("");
+  }
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    if (busy || !valid || baseQuantity === null) return;
+    setBusy(true);
+    setError("");
+    try {
+      await request(`/catalog/products/${product.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ reorderPoint: Number(baseQuantity) }),
+      });
+      done();
+    } catch (cause) {
+      setError((cause as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return <Frame title={`Reorder point · ${product.name}`} close={close}>
+    <form onSubmit={submit}>
+      <p className="modal-intro">Choose the unit you count in. The saved threshold is shown in base units so it matches inventory alerts.</p>
+      {product.units.length > 1 && <div className="reorder-unit-field"><span>Counting unit</span><AppSelect
+        value={unitId} onValueChange={chooseUnit} aria-label="Counting unit"
+        options={product.units.map((item) => ({ value: String(item.id), label: <>{item.name} · {item.multiplier} {product.baseUnit}</> }))} /></div>}
+      <label>Reorder when stock reaches
+        <input type="number" min="0" max={unit ? Math.floor(2_147_483_647 / unit.multiplier) : undefined}
+          step="1" required value={quantity} onChange={(event) => setQuantity(event.target.value)} />
+      </label>
+      <p className="reorder-equivalent">{valid ? `${baseQuantity?.toLocaleString()} ${product.baseUnit} in base units` : "Enter a whole number within the supported stock range."}</p>
+      {error && <div className="alert error" role="alert">{error}</div>}
+      <div className="modal-actions"><button type="button" className="subtle" onClick={close}>Cancel</button>
+        <button className="primary" disabled={busy || !valid}>Save reorder point</button></div>
+    </form>
+  </Frame>;
+}
+
 export function EditRecord({
   path,
   record,

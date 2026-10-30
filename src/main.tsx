@@ -50,7 +50,7 @@ import {
 import { PurchaseCreate, readPurchaseAttempt } from "./PurchaseCreate";
 import { ReceiptModal } from "./PurchaseReceipt";
 import { CustomerReturns } from "./CustomerReturns";
-import { ProductCreate, UnitCreate, EditRecord } from "./MasterForms";
+import { ProductCreate, UnitCreate, ReorderPointEditor, EditRecord } from "./MasterForms";
 import { SupplierReturns } from "./SupplierReturns";
 import { InviteStaff, AcceptInvite } from "./Invitations";
 import { OpeningStock } from "./OpeningStock";
@@ -1884,6 +1884,7 @@ function Directory({ page, user }: { page: Page; user: User }) {
     [child, setChild] = useState<Entity[]>([]),
     [unitCreating, setUnitCreating] = useState(false),
     [editing, setEditing] = useState(false),
+    [reorderEditing, setReorderEditing] = useState(false),
     [unitEditing, setUnitEditing] = useState<Entity | null>(null),
     [warehouseId, setWarehouseId] = useState<string | null>(() =>
       warehouseIdFromHash(),
@@ -2073,7 +2074,7 @@ function Directory({ page, user }: { page: Page; user: User }) {
             <button className="subtle" disabled={productPage >= productPagination.totalPages || loading} onClick={() => setProductPage(productPage + 1)}>Next</button>
           </div></div>}
       </div>
-      {selected && page !== "Warehouses" && !unitEditing && (
+      {selected && page !== "Warehouses" && !unitEditing && !reorderEditing && (
         <Modal title={selected.name || page} close={() => setSelected(null)}>
           <div className="detail-pairs">
             {Object.entries(selected)
@@ -2089,6 +2090,9 @@ function Directory({ page, user }: { page: Page; user: User }) {
             <button className="subtle" onClick={() => setEditing(true)}>
               Edit
             </button>
+          )}
+          {page === "Products" && ["ADMIN", "MANAGER"].includes(user.role) && (
+            <button className="subtle" onClick={() => setReorderEditing(true)}>Set reorder point</button>
           )}
           {page === "Products" && (
             <>
@@ -2155,7 +2159,7 @@ function Directory({ page, user }: { page: Page; user: User }) {
           record={selected}
           fields={
             page === "Products"
-              ? ["name", "reorderPoint"]
+              ? ["name"]
               : page === "Contacts"
                 ? ["name", "isSupplier", "isBuyer"]
                 : page === "Warehouses"
@@ -2168,6 +2172,13 @@ function Directory({ page, user }: { page: Page; user: User }) {
             setSelected(null);
             load();
           }}
+        />
+      )}
+      {selected && reorderEditing && page === "Products" && (
+        <ReorderPointEditor
+          product={{ id: selected.id, name: selected.name || "Product", baseUnit: selected.baseUnit, reorderPoint: selected.reorderPoint, units: selected.units || [] }}
+          close={() => setReorderEditing(false)}
+          done={() => { setReorderEditing(false); setSelected(null); load(true); }}
         />
       )}
       {creating &&
