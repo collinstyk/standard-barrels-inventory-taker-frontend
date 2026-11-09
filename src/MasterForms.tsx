@@ -61,6 +61,7 @@ export function ProductCreate({
     [unitName, setUnitName] = useState(""),
     [sku, setSku] = useState(""),
     [price, setPrice] = useState("0"),
+    [cost, setCost] = useState(""),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [uncertain, setUncertain] = useState(false);
@@ -87,6 +88,7 @@ export function ProductCreate({
             baseUnit,
             ...(categoryId ? { categoryId } : { newCategoryName }),
             reorderPoint: Number(reorderPoint),
+            defaultCostBase: cost || null,
             units: [{ name: unitName, multiplier: 1, price, sku }],
           }),
         },
@@ -195,7 +197,15 @@ export function ProductCreate({
           </label>
         </div>
         <label>
-          Unit price (₦)
+          Default purchase cost per {baseUnit || "base unit"} (₦) · optional
+          <AmountInput
+            pattern="[0-9]{1,3}(,[0-9]{3})*(\.[0-9]{1,4})?"
+            value={cost}
+            onValueChange={setCost}
+          />
+        </label>
+        <label>
+          Selling price for {unitName || "this unit"} (₦)
           <AmountInput
             pattern="[0-9]{1,3}(,[0-9]{3})*(\.[0-9]{1,4})?"
             required
@@ -284,7 +294,7 @@ export function UnitCreate({
           />
         </label>
         <label>
-          Price (₦)
+          Selling price (₦)
           <AmountInput
             pattern="[0-9]{1,3}(,[0-9]{3})*(\.[0-9]{1,4})?"
             required
@@ -305,6 +315,49 @@ export function UnitCreate({
     </Frame>
   );
 }
+export function DefaultCostEditor({
+  product,
+  close,
+  done,
+}: {
+  product: { id: string | number; name: string; baseUnit: string; defaultCostBase?: string | null; lastReceivedCostBase?: string | null };
+  close: () => void;
+  done: () => void;
+}) {
+  const [cost, setCost] = useState(product.defaultCostBase ?? "");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await request(`/catalog/products/${product.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ defaultCostBase: cost || null }),
+      });
+      done();
+    } catch (cause) {
+      setError((cause as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return <Frame title={`Default purchase cost · ${product.name}`} close={close}>
+    <form onSubmit={submit}>
+      <p className="modal-intro">Enter the cost for one {product.baseUnit}. Costs for larger units are derived from their multipliers. This does not change selling prices or past purchases.</p>
+      <label>Default purchase cost per {product.baseUnit} (₦)
+        <AmountInput value={cost} onValueChange={setCost} pattern="[0-9]{1,3}(,[0-9]{3})*(\.[0-9]{1,4})?" placeholder="Not set" />
+      </label>
+      <p className="reorder-equivalent">Last received: {product.lastReceivedCostBase == null ? "No posted purchase receipt" : `${money(product.lastReceivedCostBase)} per ${product.baseUnit}`}. Leave blank if the default cost is unknown.</p>
+      {error && <div className="alert error" role="alert">{error}</div>}
+      <div className="modal-actions"><button type="button" className="subtle" onClick={close}>Cancel</button>
+        <button className="primary" disabled={busy}>Save default cost</button></div>
+    </form>
+  </Frame>;
+}
+
 export function ReorderPointEditor({
   product,
   close,

@@ -50,7 +50,7 @@ import {
 import { PurchaseCreate, readPurchaseAttempt } from "./PurchaseCreate";
 import { ReceiptModal } from "./PurchaseReceipt";
 import { CustomerReturns } from "./CustomerReturns";
-import { ProductCreate, UnitCreate, ReorderPointEditor, EditRecord } from "./MasterForms";
+import { ProductCreate, UnitCreate, DefaultCostEditor, ReorderPointEditor, EditRecord } from "./MasterForms";
 import { SupplierReturns } from "./SupplierReturns";
 import { InviteStaff, AcceptInvite } from "./Invitations";
 import { OpeningStock } from "./OpeningStock";
@@ -307,8 +307,6 @@ function App() {
             Workspace <ChevronRight size={15} /> <b>{page}</b>
           </div>
           <div className="top-actions">
-            <span className="live-dot" />{" "}
-            <span className="desktop-only">Connected workspace</span>
             <button
               className="icon theme-toggle"
               onClick={() => setTheme(theme === "light" ? "dark" : "light")}
@@ -1885,6 +1883,7 @@ function Directory({ page, user }: { page: Page; user: User }) {
     [unitCreating, setUnitCreating] = useState(false),
     [editing, setEditing] = useState(false),
     [reorderEditing, setReorderEditing] = useState(false),
+    [costEditing, setCostEditing] = useState(false),
     [unitEditing, setUnitEditing] = useState<Entity | null>(null),
     [warehouseId, setWarehouseId] = useState<string | null>(() =>
       warehouseIdFromHash(),
@@ -2004,7 +2003,7 @@ function Directory({ page, user }: { page: Page; user: User }) {
                 <tr>
                   <th scope="col">S/N</th>
                   <th>Name</th>
-                  {page === "Products" && <><th>Unit</th><th>Cost price</th><th>Selling price</th></>}
+                  {page === "Products" && <><th>Unit</th><th>Default purchase cost</th><th>Selling price</th></>}
                   {page === "Contacts" && <th>Type</th>}
                   {page === "Warehouses" && <th>Location</th>}
                   <th>{page === "Products" ? "" : ""}</th>
@@ -2039,7 +2038,7 @@ function Directory({ page, user }: { page: Page; user: User }) {
                         <td onClick={(event) => event.stopPropagation()} data-label="Unit">{units.length > 1 ? <AppSelect
                           value={String(unit?.id ?? "")} onValueChange={(value) => setProductUnits((current) => ({ ...current, [String(r.id)]: value }))}
                           aria-label={`Unit for ${r.name}`} options={units.map((item) => ({ value: String(item.id), label: <>{item.name}</> }))} /> : unit?.name || "—"}</td>
-                        <td data-label="Cost price" className="muted">Not tracked</td>
+                        <td data-label="Default purchase cost">{unit?.defaultCostInUnit == null ? <span className="muted">Cost not set</span> : money(unit.defaultCostInUnit)}</td>
                         <td data-label="Selling price"><strong>{unit ? money(unit.price) : "—"}</strong></td>
                       </>;
                     })()}
@@ -2050,13 +2049,14 @@ function Directory({ page, user }: { page: Page; user: User }) {
                       </td>
                     )}
                     {page === "Warehouses" && <td>{r.location || "—"}</td>}
-                    <td onClick={(event) => event.stopPropagation()}>{page === "Products" && ["ADMIN", "MANAGER"].includes(user.role) ? (
+                    <td onClick={(event) => event.stopPropagation()}>{page === "Products" && ["ADMIN", "MANAGER"].includes(user.role) ? (<div className="product-price-actions">
+                      <button className="subtle" onClick={() => { setSelected(r); setCostEditing(true); }}>Update cost</button>
                       <button className="subtle" disabled={!r.units?.length} onClick={() => {
                         const units = r.units as Entity[];
                         const unit = units.find((item) => String(item.id) === productUnits[String(r.id)]) ?? units[0];
                         setSelected(r);
                         setUnitEditing(unit);
-                      }}>Update price</button>
+                      }}>Update selling price</button></div>
                     ) : <ChevronRight size={17} />}</td>
                   </tr>
                 ))}
@@ -2074,7 +2074,7 @@ function Directory({ page, user }: { page: Page; user: User }) {
             <button className="subtle" disabled={productPage >= productPagination.totalPages || loading} onClick={() => setProductPage(productPage + 1)}>Next</button>
           </div></div>}
       </div>
-      {selected && page !== "Warehouses" && !unitEditing && !reorderEditing && (
+      {selected && page !== "Warehouses" && !unitEditing && !reorderEditing && !costEditing && (
         <Modal title={selected.name || page} close={() => setSelected(null)}>
           <div className="detail-pairs">
             {Object.entries(selected)
@@ -2094,6 +2094,7 @@ function Directory({ page, user }: { page: Page; user: User }) {
           {page === "Products" && ["ADMIN", "MANAGER"].includes(user.role) && (
             <button className="subtle" onClick={() => setReorderEditing(true)}>Set reorder point</button>
           )}
+          {page === "Products" && <p className="reorder-equivalent">Default base cost: {selected.defaultCostBase == null ? "Cost not set" : money(selected.defaultCostBase)} · Last received: {selected.lastReceivedCostBase == null ? "No posted receipt" : money(selected.lastReceivedCostBase)}</p>}
           {page === "Products" && (
             <>
               <h3>Product units</h3>
@@ -2179,6 +2180,13 @@ function Directory({ page, user }: { page: Page; user: User }) {
           product={{ id: selected.id, name: selected.name || "Product", baseUnit: selected.baseUnit, reorderPoint: selected.reorderPoint, units: selected.units || [] }}
           close={() => setReorderEditing(false)}
           done={() => { setReorderEditing(false); setSelected(null); load(true); }}
+        />
+      )}
+      {selected && costEditing && page === "Products" && (
+        <DefaultCostEditor
+          product={{ id: selected.id, name: selected.name || "Product", baseUnit: selected.baseUnit, defaultCostBase: selected.defaultCostBase, lastReceivedCostBase: selected.lastReceivedCostBase }}
+          close={() => setCostEditing(false)}
+          done={() => { setCostEditing(false); setSelected(null); load(true); }}
         />
       )}
       {creating &&

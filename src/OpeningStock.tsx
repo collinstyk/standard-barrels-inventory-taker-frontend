@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Check, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { AppSelect } from "./components/AppSelect";
+import { AmountInput } from "./components/AmountInput";
 import { ApiError, command, date, listData, newKey, type ApiList } from "./api";
 import { cachedRequest } from "./query";
 import { ProductCreate } from "./MasterForms";
@@ -17,6 +18,7 @@ type DraftLine = {
   unitName: string;
   warehouseId: string;
   quantity: string;
+  unitCost: string;
   expiryDate: string;
 };
 type Body = {
@@ -26,6 +28,7 @@ type Body = {
     unitId: number;
     warehouseId: number;
     quantityInUnit: number;
+    unitCostInUnit?: string;
     expiryDate?: string;
   }>;
 };
@@ -41,6 +44,7 @@ type Result = {
     warehouse: Warehouse;
     quantityInUnit: number;
     quantityBase: number;
+    unitCostBase?: string | null;
     expiryDate: string | null;
     batchId: string;
     resultingProductSellableCache: number;
@@ -66,6 +70,7 @@ const emptyLine = (): DraftLine => ({
   unitName: "",
   warehouseId: "",
   quantity: "",
+  unitCost: "",
   expiryDate: "",
 });
 const attemptKey = (userId: string) => `sb-opening-stock-attempt-v1:${userId}`;
@@ -209,6 +214,8 @@ export function OpeningStock({
       seen.add(key);
       if (line.expiryDate && !/^\d{4}-\d{2}-\d{2}$/.test(line.expiryDate))
         return `Enter a valid expiry date in line ${index + 1}.`;
+      if (line.unitCost && !/^\d+(?:\.\d{1,4})?$/.test(line.unitCost))
+        return `Enter a valid unit cost in line ${index + 1}.`;
     }
     if (notes.trim().length > 1000)
       return "Notes must be 1,000 characters or fewer.";
@@ -222,6 +229,7 @@ export function OpeningStock({
         unitId: Number(line.unitId),
         warehouseId: Number(line.warehouseId),
         quantityInUnit: Number(line.quantity),
+        ...(line.unitCost ? { unitCostInUnit: line.unitCost } : {}),
         ...(line.expiryDate ? { expiryDate: line.expiryDate } : {}),
       })),
     };
@@ -361,6 +369,7 @@ export function OpeningStock({
                   <th>Entered</th>
                   <th>Base units added</th>
                   <th>Expiry</th>
+                  <th>Cost per base unit</th>
                 </tr>
               </thead>
               <tbody>
@@ -378,6 +387,7 @@ export function OpeningStock({
                       {line.quantityBase} {line.product.baseUnit}
                     </td>
                     <td>{line.expiryDate || "—"}</td>
+                    <td>{line.unitCostBase == null ? "Cost unknown" : `₦${line.unitCostBase}`}</td>
                   </tr>
                 ))}
               </tbody>
@@ -450,6 +460,7 @@ export function OpeningStock({
                     {line.quantityInUnit} units ·{" "}
                     {warehouseName(String(line.warehouseId))}
                     {line.expiryDate ? ` · Expires ${line.expiryDate}` : ""}
+                    {line.unitCostInUnit ? ` · Cost ₦${line.unitCostInUnit} per unit` : " · Cost unknown"}
                   </span>
                 </div>
               ))}
@@ -471,6 +482,7 @@ export function OpeningStock({
                     {line.expiryDate
                       ? ` · Expires ${line.expiryDate}`
                       : " · No expiry"}
+                    {line.unitCost ? ` · Cost ₦${line.unitCost} per ${line.unitName}` : " · Cost unknown"}
                   </span>
                 </div>
               ))}
@@ -560,6 +572,11 @@ export function OpeningStock({
                           }
                           placeholder="Whole units"
                         />
+                      </label>
+                      <label>
+                        Cost per {line.unitName || "selected unit"} (₦) <span className="opening-optional">optional</span>
+                        <AmountInput value={line.unitCost} onValueChange={(value) => update(line.id, { unitCost: value })}
+                          pattern="[0-9]{1,3}(,[0-9]{3})*(\.[0-9]{1,4})?" placeholder="Unknown" />
                       </label>
                       <label>
                         Expiry date{" "}

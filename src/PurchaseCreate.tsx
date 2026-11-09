@@ -14,7 +14,7 @@ import { decimal, decimalString, quantity } from "./sales/checkout-model";
 
 type Contact = { id: string; name: string };
 type Product = { id: string; name: string };
-type Unit = { id: number; name: string; sku: string; price: string };
+type Unit = { id: number; name: string; sku: string; price: string; defaultCostInUnit: string | null };
 type Line = {
   id: string;
   productId: string;
@@ -185,7 +185,7 @@ export function PurchaseCreate({
         unitId: unit.id,
         unitName: unit.name,
         quantity: addQuantity,
-        cost: unit.price,
+        cost: unit.defaultCostInUnit ?? "",
         expiryDate: "",
       },
     ]);
@@ -454,6 +454,9 @@ export function PurchaseCreate({
                       onChange={(event) => setAddQuantity(event.target.value)}
                     />
                   </label>
+                  {unitId && units.find((unit) => unit.id === Number(unitId))?.defaultCostInUnit == null && (
+                    <p className="sale-help">No default purchase cost is set for this product. Enter its agreed unit cost below after adding it.</p>
+                  )}
                   <button
                     className="subtle"
                     type="button"

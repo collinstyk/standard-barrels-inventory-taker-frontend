@@ -53,6 +53,7 @@ function readSavedSession(): SavedSession | null {
 }
 
 let current = readSavedSession();
+
 export const session = {
   get() {
     if (current && current.expiresAt <= Date.now()) session.set(null);

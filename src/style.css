@@ -259,6 +259,9 @@ p {
 }
 
 .topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
   height: 70px;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
@@ -283,14 +286,6 @@ p {
 
 .top-actions {
   gap: 10px;
-}
-
-.live-dot {
-  width: 7px;
-  height: 7px;
-  background: #10ae7a;
-  border-radius: 50%;
-  box-shadow: 0 0 0 3px rgba(16, 174, 122, 0.12);
 }
 
 .icon {
@@ -1324,6 +1319,7 @@ td small {
 .reorder-equivalent { margin: 4px 0 16px; color: var(--muted); font-size: 12px; }
 .product-table { min-width: 700px; }
 .product-table td:last-child { white-space: nowrap; }
+.product-price-actions { display: flex; gap: 7px; flex-wrap: wrap; }
 
 @media (max-width: 650px) {
   .inventory-toolbar { align-items: stretch; flex-direction: column; padding: 0 17px 16px; }

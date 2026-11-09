@@ -41,10 +41,7 @@
 }
 .opening-fields {
   display: grid;
-  grid-template-columns: minmax(180px, 2fr) minmax(150px, 1.3fr) minmax(
-      170px,
-      1.6fr
-    ) minmax(120px, 1fr) minmax(155px, 1.2fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
   align-items: start;
 }
